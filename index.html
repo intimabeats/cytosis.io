@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cytosis.io</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #f0f0f0;
+      }
+      canvas {
+        display: block;
+      }
+      #leaderboard {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        font-family: Arial, sans-serif;
+        min-width: 150px;
+      }
+      #stats {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        font-family: Arial, sans-serif;
+      }
+      #controls {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        font-family: Arial, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="leaderboard">
+      <h3>Leaderboard</h3>
+      <div id="leaderboard-content"></div>
+    </div>
+    <div id="stats">
+      <div>Score: <span id="score">0</span></div>
+      <div>Size: <span id="size">0</span></div>
+    </div>
+    <div id="controls">
+      <div>Move: Mouse</div>
+      <div>Split: Space</div>
+      <div>Eject Mass: W</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

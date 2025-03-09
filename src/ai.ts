@@ -1,4 +1,4 @@
-// src/ai.ts
+// src/ai.ts - Updated for more responsive AI movement
 import { Entity, Vector2D, Player } from './types';
 import { 
   distance, 
@@ -77,7 +77,7 @@ export class AIController {
       } catch (error) {
         console.error("Error in AI decision making:", error);
         // Fallback to wandering behavior
-                this.behaviorType = AIBehaviorType.WANDER;
+        this.behaviorType = AIBehaviorType.WANDER;
         this.targetEntity = null;
         this.wanderTarget = randomPosition(this.worldSize);
       }
@@ -335,6 +335,17 @@ export class AIController {
     
     // Set player direction
     this.player.setTargetDirection(normalize(direction));
+    
+    // Apply additional force for faster AI movement
+    for (const cell of this.player.cells) {
+      // EXTREMELY INCREASED force for AI movement
+      const forceMagnitude = 150000 * deltaTime; 
+      const force = {
+        x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+        y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+      };
+      cell.applyForce(force);
+    }
   }
   
   private executeChase(deltaTime: number): void {
@@ -351,6 +362,17 @@ export class AIController {
     
     // Set player direction
     this.player.setTargetDirection(normalize(direction));
+    
+    // Apply additional force for faster AI movement
+    for (const cell of this.player.cells) {
+      // EXTREMELY INCREASED force for chase behavior
+      const forceMagnitude = 180000 * deltaTime;
+      const force = {
+        x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+        y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+      };
+      cell.applyForce(force);
+    }
     
     // Check if close enough to split
     const dist = distance(playerPos, this.targetEntity.position);
@@ -373,6 +395,17 @@ export class AIController {
     
     // Set player direction
     this.player.setTargetDirection(normalize(direction));
+    
+        // Apply additional force for faster AI movement
+    for (const cell of this.player.cells) {
+      // EXTREMELY INCREASED force for flee behavior
+      const forceMagnitude = 200000 * deltaTime;
+      const force = {
+        x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+        y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+      };
+      cell.applyForce(force);
+    }
     
     // Eject mass to move faster if being chased closely
     const dist = distance(playerPos, this.targetEntity.position);
@@ -400,6 +433,17 @@ export class AIController {
     
     // Set player direction
     this.player.setTargetDirection(normalize(direction));
+    
+    // Apply additional force for faster AI movement
+    for (const cell of this.player.cells) {
+      // INCREASED force for feeding behavior
+      const forceMagnitude = 150000 * deltaTime;
+      const force = {
+        x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+        y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+      };
+      cell.applyForce(force);
+    }
   }
   
   private executeSplitAndChase(deltaTime: number): void {
@@ -416,6 +460,17 @@ export class AIController {
     
     // Set player direction
     this.player.setTargetDirection(normalize(direction));
+    
+    // Apply additional force for faster AI movement
+    for (const cell of this.player.cells) {
+      // INCREASED force for split and chase behavior
+      const forceMagnitude = 180000 * deltaTime;
+      const force = {
+        x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+        y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+      };
+      cell.applyForce(force);
+    }
     
     // Split if close enough and big enough
     const dist = distance(playerPos, this.targetEntity.position);
@@ -454,6 +509,17 @@ export class AIController {
         const direction = subtract(predictedPos, playerPos);
         this.player.setTargetDirection(normalize(direction));
         
+        // Apply additional force for faster AI movement
+        for (const cell of this.player.cells) {
+          // INCREASED force for ambush behavior
+          const forceMagnitude = 170000 * deltaTime;
+          const force = {
+            x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+            y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+          };
+          cell.applyForce(force);
+        }
+        
         // If we're close to the ambush position and the target is approaching, split
         const distToTarget = distance(playerPos, targetPos);
         if (distToTarget < 150 && this.player.getTotalMass() > 200) {
@@ -468,6 +534,17 @@ export class AIController {
     // Fallback if target has no velocity: just chase directly
     const direction = subtract(targetPos, playerPos);
     this.player.setTargetDirection(normalize(direction));
+    
+    // Apply additional force for faster AI movement
+    for (const cell of this.player.cells) {
+      // INCREASED force for fallback chase
+      const forceMagnitude = 150000 * deltaTime;
+      const force = {
+        x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+        y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+      };
+      cell.applyForce(force);
+    }
   }
   
   private executeDefend(deltaTime: number): void {
@@ -489,6 +566,17 @@ export class AIController {
       // Too close to virus, move away
       const direction = subtract(playerPos, virusPos);
       this.player.setTargetDirection(normalize(direction));
+      
+      // Apply additional force for faster AI movement
+      for (const cell of this.player.cells) {
+        // INCREASED force for moving away from virus
+        const forceMagnitude = 180000 * deltaTime;
+        const force = {
+          x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+          y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+        };
+        cell.applyForce(force);
+      }
     } else {
       // Look for prey near the virus to ambush
       const nearbyEntities = this.getNearbyEntities();
@@ -511,6 +599,17 @@ export class AIController {
         
         const direction = subtract(midPoint, playerPos);
         this.player.setTargetDirection(normalize(direction));
+        
+        // Apply additional force for faster AI movement
+        for (const cell of this.player.cells) {
+          // INCREASED force for positioning
+          const forceMagnitude = 150000 * deltaTime;
+          const force = {
+            x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+            y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+          };
+          cell.applyForce(force);
+        }
         
         // Eject mass toward virus if prey is close to it
         const preyToVirus = distance(prey.position, virusPos);
@@ -561,6 +660,17 @@ export class AIController {
       } else {
         // Continue moving toward target
         this.player.setTargetDirection(normalize(direction));
+        
+        // Apply additional force for faster AI movement
+        for (const cell of this.player.cells) {
+          // INCREASED force for scavenging
+          const forceMagnitude = 150000 * deltaTime;
+          const force = {
+            x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+            y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+          };
+          cell.applyForce(force);
+        }
       }
     } else {
       // No target, switch to wander

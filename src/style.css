@@ -1,11 +1,11 @@
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Rajdhani', system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  background-color: #0a0a1a;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -33,7 +33,7 @@ canvas {
   color: white;
   padding: 10px;
   border-radius: 5px;
-  font-family: Arial, sans-serif;
+  font-family: 'Rajdhani', sans-serif;
   z-index: 100;
 }
 
@@ -45,6 +45,7 @@ canvas {
   border-radius: 50%;
   margin-right: 5px;
   vertical-align: middle;
+  position: relative;
 }
 
 .power-up-speed {
@@ -83,6 +84,22 @@ canvas {
   animation: fadeIn 0.5s;
 }
 
+/* Score popup animation */
+@keyframes scorePopup {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-50px); opacity: 0; }
+}
+
+.score-popup {
+  position: absolute;
+  color: #ffff00;
+  font-weight: bold;
+  font-size: 18px;
+  text-shadow: 0 0 5px rgba(0, 0, 0, 0.7);
+  animation: scorePopup 1.5s forwards;
+  pointer-events: none;
+}
+
 /* Mobile optimizations */
 @media (max-width: 768px) {
   #controls {
@@ -93,4 +110,44 @@ canvas {
     max-height: 30vh;
     overflow-y: auto;
   }
+  
+  .welcome-container {
+    width: 90%;
+    max-width: 400px;
+    padding: 20px;
+  }
+  
+  .game-title {
+    font-size: 36px;
+  }
+}
+
+/* Minimap styles */
+#minimap {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background-color: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 5px;
+  z-index: 90;
+}
+
+/* Player name styles */
+.player-name {
+  position: absolute;
+  color: white;
+  font-weight: bold;
+  text-align: center;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+/* Mass indicator */
+.mass-indicator {
+  position: absolute;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
 }

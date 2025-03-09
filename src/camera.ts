@@ -1,6 +1,4 @@
-// [v1.0-Part3] Camera implementation
-// #=== 85% ===#
-
+// src/camera.ts - Updated for more responsive following
 import { Camera, Vector2D } from './types';
 import { lerp } from './utils';
 
@@ -13,6 +11,7 @@ export class GameCamera implements Camera {
   height: number;
   minScale: number;
   maxScale: number;
+  smoothFactor: number;
   
   constructor(width: number, height: number) {
     this.position = { x: 0, y: 0 };
@@ -23,6 +22,8 @@ export class GameCamera implements Camera {
     this.height = height;
     this.minScale = 0.1;  // Minimum zoom level
     this.maxScale = 2.0;  // Maximum zoom level
+    // IMPROVED: Much faster camera response for better gameplay
+    this.smoothFactor = 0.5; // Increased from 0.2 to 0.5 for near-instant camera movement
   }
 
   update(deltaTime: number): void {
@@ -31,8 +32,9 @@ export class GameCamera implements Camera {
       deltaTime = 0.016; // Default to 60fps
     }
     
-    // Smooth camera movement with lerp
-    const lerpFactor = 1 - Math.pow(0.1, deltaTime);
+    // IMPROVED: Much faster camera movement with higher lerp factor
+    // Adjust lerp factor based on deltaTime for consistent smoothness
+    const lerpFactor = 1 - Math.pow(1 - this.smoothFactor, deltaTime * 60);
     
     this.position.x = lerp(this.position.x, this.targetPosition.x, lerpFactor);
     this.position.y = lerp(this.position.y, this.targetPosition.y, lerpFactor);
@@ -62,8 +64,9 @@ export class GameCamera implements Camera {
     this.targetPosition = { ...target };
     
     // Scale based on player size (zoom out as player gets bigger)
+    // Adjusted formula for better visibility
     const baseScale = 1;
-    const scaleFactor = Math.max(0.2, 30 / (playerRadius + 30));
+    const scaleFactor = Math.max(0.3, 40 / (playerRadius + 40));
     this.targetScale = baseScale * scaleFactor;
     
     // Clamp target scale to min/max values
@@ -109,11 +112,14 @@ export class GameCamera implements Camera {
     const screenPos = this.worldToScreen(worldPos);
     const scaledRadius = radius * this.scale;
     
+    // Add a margin to prevent pop-in/pop-out at screen edges
+    const margin = 100;
+    
     return (
-      screenPos.x + scaledRadius >= 0 &&
-      screenPos.x - scaledRadius <= this.width &&
-      screenPos.y + scaledRadius >= 0 &&
-      screenPos.y - scaledRadius <= this.height
+      screenPos.x + scaledRadius >= -margin &&
+      screenPos.x - scaledRadius <= this.width + margin &&
+      screenPos.y + scaledRadius >= -margin &&
+      screenPos.y - scaledRadius <= this.height + margin
     );
   }
 }

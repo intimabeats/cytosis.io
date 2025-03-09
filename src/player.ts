@@ -1,4 +1,4 @@
-// src/player.ts
+// src/player.ts - Complete rewrite for better gameplay
 import { Player, PlayerCell, Vector2D, PowerUpType, Camera } from './types';
 import { BaseCell } from './cell';
 import { 
@@ -11,7 +11,8 @@ import {
   validatePosition,
   radiusFromMass,
   add,
-  massFromRadius
+  massFromRadius,
+  generateMembranePoints
 } from './utils';
 
 export class PlayerCell extends BaseCell implements PlayerCell {
@@ -158,6 +159,7 @@ export class GamePlayer implements Player {
   isAI: boolean;
   activeEffects: Map<PowerUpType, number>;
   targetDirection: Vector2D;
+  mousePosition: Vector2D; // Added to track actual mouse position
   lastSplitTime: number;
   lastEjectTime: number;
   maxCells: number;
@@ -169,15 +171,16 @@ export class GamePlayer implements Player {
   totalVirusHit: number;
   totalPowerUpsCollected: number;
   
-  constructor(name: string, position: Vector2D, isAI: boolean = false, startRadius: number = 30) {
+  constructor(name: string, position: Vector2D, isAI: boolean = false, startRadius: number = 30, color: string = '') {
     this.id = generateId();
     this.name = name;
-    this.color = randomColor();
+    this.color = color || randomColor();
     this.cells = [];
     this.score = 0;
     this.isAI = isAI;
     this.activeEffects = new Map();
     this.targetDirection = { x: 0, y: 0 };
+    this.mousePosition = { x: 0, y: 0 }; // Initialize mouse position
     this.lastSplitTime = 0;
     this.lastEjectTime = 0;
     this.maxCells = 16; // Maximum number of cells a player can have
@@ -195,43 +198,43 @@ export class GamePlayer implements Player {
     this.addCell(position, startRadius);
   }
   
- addCell(position: Vector2D, radius: number): PlayerCell | null {
-  // Validate position and radius
-  if (!position || typeof radius !== 'number' || radius <= 0) {
-    console.error("Invalid parameters for addCell:", position, radius);
-    return null;
-  }
-  
-  // Check if we've reached the maximum number of cells
-  if (this.cells.length >= this.maxCells) {
-    return null;
-  }
-  
-  try {
-    const cell = new PlayerCell(
-      { x: position.x, y: position.y }, // Ensure we pass a new object
-      radius,
-      this.color,
-      this.id
-    );
-    
-    // Verify that the cell was created correctly
-    if (!cell.membranePoints || !Array.isArray(cell.membranePoints)) {
-      console.error("Cell created with invalid membrane points");
-      
-      // Fix membrane points
-      const numPoints = Math.max(10, Math.floor(radius * 0.8));
-      cell.membranePoints = generateMembranePoints(position, radius, numPoints);
-      cell.membraneTargetPoints = [...cell.membranePoints];
+  addCell(position: Vector2D, radius: number): PlayerCell | null {
+    // Validate position and radius
+    if (!position || typeof radius !== 'number' || radius <= 0) {
+      console.error("Invalid parameters for addCell:", position, radius);
+      return null;
     }
     
-    this.cells.push(cell);
-    return cell;
-  } catch (error) {
-    console.error("Error creating new cell:", error);
-    return null;
+    // Check if we've reached the maximum number of cells
+    if (this.cells.length >= this.maxCells) {
+      return null;
+    }
+    
+    try {
+      const cell = new PlayerCell(
+        { x: position.x, y: position.y }, // Ensure we pass a new object
+        radius,
+        this.color,
+        this.id
+      );
+      
+      // Verify that the cell was created correctly
+      if (!cell.membranePoints || !Array.isArray(cell.membranePoints)) {
+        console.error("Cell created with invalid membrane points");
+        
+        // Fix membrane points
+        const numPoints = Math.max(10, Math.floor(radius * 0.8));
+        cell.membranePoints = generateMembranePoints(position, radius, numPoints);
+        cell.membraneTargetPoints = [...cell.membranePoints];
+      }
+      
+      this.cells.push(cell);
+      return cell;
+    } catch (error) {
+      console.error("Error creating new cell:", error);
+      return null;
+    }
   }
-}
   
   update(deltaTime: number): void {
     // Safety check for deltaTime
@@ -246,8 +249,12 @@ export class GamePlayer implements Player {
       try {
         cell.update(deltaTime);
         
-        // Move cell toward target direction
-        if (this.targetDirection.x !== 0 || this.targetDirection.y !== 0) {
+        // IMPROVED: Each cell moves directly toward mouse position instead of using target direction
+        if (!this.isAI) {
+          // For human player, each cell moves directly toward mouse position
+          const cellToMouse = subtract(this.mousePosition, cell.position);
+          const direction = normalize(cellToMouse);
+          
           // Apply speed boost if active
           let speedMultiplier = 1;
           if (this.hasEffect(PowerUpType.SPEED)) {
@@ -257,11 +264,37 @@ export class GamePlayer implements Player {
           // Smaller cells move faster
           const sizeMultiplier = Math.max(0.5, 1 - (cell.radius / 200));
           
-          const force = multiply(
-            this.targetDirection, 
-            1000 * deltaTime * speedMultiplier * sizeMultiplier
-          );
+          // EXTREME force for near-instantaneous movement
+          const forceMagnitude = 200000 * deltaTime * speedMultiplier * sizeMultiplier;
+          
+          const force = {
+            x: direction.x * forceMagnitude,
+            y: direction.y * forceMagnitude
+          };
+          
           cell.applyForce(force);
+        } else {
+          // AI players still use target direction
+          if (this.targetDirection.x !== 0 || this.targetDirection.y !== 0) {
+            // Apply speed boost if active
+            let speedMultiplier = 1;
+            if (this.hasEffect(PowerUpType.SPEED)) {
+              speedMultiplier = 1.5;
+            }
+            
+            // Smaller cells move faster
+            const sizeMultiplier = Math.max(0.5, 1 - (cell.radius / 200));
+            
+            // EXTREME force for near-instantaneous movement
+            const forceMagnitude = 200000 * deltaTime * speedMultiplier * sizeMultiplier;
+            
+            const force = {
+              x: this.targetDirection.x * forceMagnitude,
+              y: this.targetDirection.y * forceMagnitude
+            };
+            
+            cell.applyForce(force);
+          }
         }
       } catch (error) {
         console.error("Error updating cell:", error);
@@ -352,7 +385,6 @@ export class GamePlayer implements Player {
       statsElement.appendChild(indicator);
     });
   }
-  
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
     // Check if player is invisible (except for human player)
     if (this.hasEffect(PowerUpType.INVISIBILITY) && this.isAI) {
@@ -376,15 +408,23 @@ export class GamePlayer implements Player {
     const screenPos = camera.worldToScreen(avgPos);
     
     // Render player name above the cells
-    ctx.font = '16px Arial';
+    ctx.font = 'bold 16px Rajdhani';
     ctx.fillStyle = 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 3;
     ctx.textAlign = 'center';
+    ctx.strokeText(this.name, screenPos.x, screenPos.y - this.getMaxRadius() * camera.scale - 10);
     ctx.fillText(this.name, screenPos.x, screenPos.y - this.getMaxRadius() * camera.scale - 10);
 
     // Render active effects
     let effectOffset = 20;
     this.activeEffects.forEach((timeLeft, type) => {
       const effectName = PowerUpType[type];
+      ctx.strokeText(
+        `${effectName}: ${timeLeft.toFixed(1)}s`,
+        screenPos.x,
+        screenPos.y - this.getMaxRadius() * camera.scale - effectOffset
+      );
       ctx.fillText(
         `${effectName}: ${timeLeft.toFixed(1)}s`,
         screenPos.x,
@@ -421,8 +461,8 @@ export class GamePlayer implements Player {
       
       ctx.beginPath();
       ctx.moveTo(
-        screenPos.x - this.targetDirection.x * trailLength,
-        screenPos.y - this.targetDirection.y * trailLength
+        screenPos.x - this.targetDirection.x * trailLength * camera.scale,
+        screenPos.y - this.targetDirection.y * trailLength * camera.scale
       );
       ctx.lineTo(screenPos.x, screenPos.y);
       ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
@@ -443,6 +483,19 @@ export class GamePlayer implements Player {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
+    }
+    
+    // Render mass indicator for human player
+    if (!this.isAI) {
+      const totalMass = Math.floor(this.getTotalMass());
+      ctx.font = '12px Rajdhani';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.textAlign = 'center';
+      ctx.fillText(
+        `${totalMass}`,
+        screenPos.x,
+        screenPos.y + 5
+      );
     }
   }
 
@@ -538,32 +591,38 @@ export class GamePlayer implements Player {
     });
   }
   
-setTargetDirection(target: Vector2D): void {
-  // Safety check for target
-  if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
-    return;
+  setTargetDirection(target: Vector2D): void {
+    // Safety check for target
+    if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
+      return;
+    }
+    
+    // Store the actual mouse position for direct cell movement
+    this.mousePosition = { ...target };
+    
+    // Calculate direction from average position to target
+    const avgPos = this.getAveragePosition();
+    
+    // Safety check for avgPos
+    if (!avgPos || typeof avgPos.x !== 'number' || typeof avgPos.y !== 'number') {
+      return;
+    }
+    
+    // Calculate direction vector
+    const dir = {
+      x: target.x - avgPos.x,
+      y: target.y - avgPos.y
+    };
+    
+    // Normalize direction
+    const mag = Math.sqrt(dir.x * dir.x + dir.y * dir.y);
+    if (mag > 0) {
+      dir.x /= mag;
+      dir.y /= mag;
+    }
+    
+    this.targetDirection = dir;
   }
-  
-  // Calculate direction from average position to target
-  const avgPos = this.getAveragePosition();
-  
-  // Safety check for avgPos
-  if (!avgPos || typeof avgPos.x !== 'number' || typeof avgPos.y !== 'number') {
-    return;
-  }
-  
-  let dir = subtract(target, avgPos);
-  
-  // Normalize direction
-  const mag = Math.sqrt(dir.x * dir.x + dir.y * dir.y);
-  if (mag > 0) {
-    dir.x /= mag;
-    dir.y /= mag;
-  }
-  
-  this.targetDirection = dir;
-}
-  
   split(): void {
     // Cooldown check
     const now = Date.now();
@@ -603,8 +662,18 @@ setTargetDirection(target: Vector2D): void {
           cell.mass = newMass;
           cell.radius = newRadius;
           
-          // Create new cell in the direction of movement
-          const dir = normalize(this.targetDirection);
+          // IMPROVED: Create new cell in the direction toward mouse position
+          // This ensures all cells move toward the mouse when split
+          let dir;
+          if (!this.isAI) {
+            // For human player, split toward mouse
+            const cellToMouse = subtract(this.mousePosition, cell.position);
+            dir = normalize(cellToMouse);
+          } else {
+            // For AI, use target direction
+            dir = normalize(this.targetDirection);
+          }
+          
           const newPos = {
             x: cell.position.x + dir.x * cell.radius * 2,
             y: cell.position.y + dir.y * cell.radius * 2
@@ -613,7 +682,8 @@ setTargetDirection(target: Vector2D): void {
           const newCell = new PlayerCell(newPos, newRadius, this.color, this.id);
           
           // Apply velocity in the direction of the split with a boost
-          const splitSpeed = 300 + newRadius * 2; // Larger cells split faster
+          // IMPROVED: Reduced split distance but increased speed for better control
+          const splitSpeed = 2000 + newRadius * 5; // High speed but shorter duration
           newCell.velocity = {
             x: dir.x * splitSpeed,
             y: dir.y * splitSpeed
@@ -671,8 +741,17 @@ setTargetDirection(target: Vector2D): void {
           cell.mass -= ejectMass;
           cell.radius = radiusFromMass(cell.mass);
           
-          // Create ejected mass in the direction of movement
-          const dir = normalize(this.targetDirection);
+          // IMPROVED: Eject in direction toward mouse for human player
+          let dir;
+          if (!this.isAI) {
+            // For human player, eject toward mouse
+            const cellToMouse = subtract(this.mousePosition, cell.position);
+            dir = normalize(cellToMouse);
+          } else {
+            // For AI, use target direction
+            dir = normalize(this.targetDirection);
+          }
+          
           const ejectPos = {
             x: cell.position.x + dir.x * (cell.radius + ejectRadius),
             y: cell.position.y + dir.y * (cell.radius + ejectRadius)
@@ -682,7 +761,8 @@ setTargetDirection(target: Vector2D): void {
           const ejectEvent = new CustomEvent('player-ejected-mass', {
             detail: {
               position: ejectPos,
-              velocity: { x: dir.x * 300, y: dir.y * 300 },
+              // IMPROVED: Faster ejection for better gameplay
+              velocity: { x: dir.x * 2000, y: dir.y * 2000 },
               radius: ejectRadius,
               color: this.color
             }
@@ -691,8 +771,8 @@ setTargetDirection(target: Vector2D): void {
           
           // Apply recoil force to the cell
           cell.applyForce({
-            x: -dir.x * 500,
-            y: -dir.y * 500
+            x: -dir.x * 1000,
+            y: -dir.y * 1000
           });
           
           ejectedCount++;
@@ -851,7 +931,7 @@ setTargetDirection(target: Vector2D): void {
     }
   }
   
-  // New methods for stats tracking
+  // Methods for stats tracking
   
   recordFoodEaten(): void {
     this.totalFoodEaten++;
@@ -876,3 +956,4 @@ setTargetDirection(target: Vector2D): void {
     };
   }
 }
+      

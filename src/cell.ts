@@ -1,4 +1,4 @@
-// src/cell.ts
+// src/cell.ts - Beginning of updated file
 import { Cell, Vector2D, Camera } from './types';
 import { 
   generateId, 
@@ -9,7 +9,8 @@ import {
   add,
   distance,
   normalize,
-  multiply
+  multiply,
+  subtract
 } from './utils';
 
 export class BaseCell implements Cell {
@@ -31,85 +32,85 @@ export class BaseCell implements Cell {
   pulseSpeed: number;
   
   constructor(position: Vector2D, radius: number, color: string) {
-  this.id = generateId();
-  this.position = { ...position };
-  this.velocity = { x: 0, y: 0 };
-  this.radius = radius;
-  this.mass = Math.PI * radius * radius;
-  this.color = color;
-  
-  // Membrane properties - ensure proper initialization
-  const numPoints = Math.max(10, Math.floor(radius * 0.8));
-  try {
-    this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
-    this.membraneTargetPoints = JSON.parse(JSON.stringify(this.membranePoints)); // Deep copy
-  } catch (error) {
-    console.error("Error initializing membrane points:", error);
-    // Fallback to simple points
-    this.membranePoints = [];
-    this.membraneTargetPoints = [];
-    for (let i = 0; i < numPoints; i++) {
-      const angle = (i / numPoints) * Math.PI * 2;
-      const x = this.position.x + Math.cos(angle) * this.radius;
-      const y = this.position.y + Math.sin(angle) * this.radius;
-      this.membranePoints.push({ x, y });
-      this.membraneTargetPoints.push({ x, y });
-    }
-  }
-  
-  this.membraneNoiseTime = 0;
-  this.membraneNoiseSpeed = 0.5;
-  this.friction = 0.05;
-  this.lastUpdateTime = Date.now();
-  
-  // Visual effects
-  this.elasticity = 0.3; // How much the cell stretches when moving
-  this.pulseEffect = 0;
-  this.pulseDirection = 1;
-  this.pulseSpeed = 0.5 + Math.random() * 0.5;
-}
-  
-  update(deltaTime: number): void {
-  // Safety check for deltaTime
-  if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
-    const now = Date.now();
-    deltaTime = (now - this.lastUpdateTime) / 1000;
-    this.lastUpdateTime = now;
+    this.id = generateId();
+    this.position = { ...position };
+    this.velocity = { x: 0, y: 0 };
+    this.radius = radius;
+    this.mass = Math.PI * radius * radius;
+    this.color = color;
     
-    // Still need a valid deltaTime
-    if (deltaTime <= 0 || deltaTime > 1) {
-      deltaTime = 0.016; // Default to 60fps
+    // Membrane properties - ensure proper initialization
+    const numPoints = Math.max(10, Math.floor(radius * 0.8));
+    try {
+      this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+      this.membraneTargetPoints = JSON.parse(JSON.stringify(this.membranePoints)); // Deep copy
+    } catch (error) {
+      console.error("Error initializing membrane points:", error);
+      // Fallback to simple points
+      this.membranePoints = [];
+      this.membraneTargetPoints = [];
+      for (let i = 0; i < numPoints; i++) {
+        const angle = (i / numPoints) * Math.PI * 2;
+        const x = this.position.x + Math.cos(angle) * this.radius;
+        const y = this.position.y + Math.sin(angle) * this.radius;
+        this.membranePoints.push({ x, y });
+        this.membraneTargetPoints.push({ x, y });
+      }
     }
-  } else {
+    
+    this.membraneNoiseTime = 0;
+    this.membraneNoiseSpeed = 0.5;
+    // EXTREMELY REDUCED friction for near-instantaneous movement
+    this.friction = 0.001; // Almost no friction
     this.lastUpdateTime = Date.now();
+    
+    // Visual effects
+    this.elasticity = 0.3; // How much the cell stretches when moving
+    this.pulseEffect = 0;
+    this.pulseDirection = 1;
+    this.pulseSpeed = 0.5 + Math.random() * 0.5;
   }
-  
-  // Apply friction
-  this.velocity.x *= (1 - this.friction * deltaTime);
-  this.velocity.y *= (1 - this.friction * deltaTime);
-  
-  // Update position
-  this.position.x += this.velocity.x * deltaTime;
-  this.position.y += this.velocity.y * deltaTime;
-  
-  // Validate position to prevent NaN
-  const defaultPos = { x: 0, y: 0 };
-  this.position = validatePosition(this.position, defaultPos);
-  
-  // Update membrane - ensure membranePoints and membraneTargetPoints are initialized
-  if (!this.membranePoints || !this.membraneTargetPoints || 
-      !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
-    const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
-    this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
-    this.membraneTargetPoints = [...this.membranePoints];
+  update(deltaTime: number): void {
+    // Safety check for deltaTime
+    if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
+      const now = Date.now();
+      deltaTime = (now - this.lastUpdateTime) / 1000;
+      this.lastUpdateTime = now;
+      
+      // Still need a valid deltaTime
+      if (deltaTime <= 0 || deltaTime > 1) {
+        deltaTime = 0.016; // Default to 60fps
+      }
+    } else {
+      this.lastUpdateTime = Date.now();
+    }
+    
+    // Apply minimal friction for responsive movement
+    this.velocity.x *= (1 - this.friction * deltaTime);
+    this.velocity.y *= (1 - this.friction * deltaTime);
+    
+    // Update position
+    this.position.x += this.velocity.x * deltaTime;
+    this.position.y += this.velocity.y * deltaTime;
+    
+    // Validate position to prevent NaN
+    const defaultPos = { x: 0, y: 0 };
+    this.position = validatePosition(this.position, defaultPos);
+    
+    // Update membrane - ensure membranePoints and membraneTargetPoints are initialized
+    if (!this.membranePoints || !this.membraneTargetPoints || 
+        !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
+      const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+      this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+      this.membraneTargetPoints = [...this.membranePoints];
+    }
+    
+    this.membraneNoiseTime += deltaTime * this.membraneNoiseSpeed;
+    this.updateMembranePoints();
+    
+    // Update pulse effect
+    this.updatePulseEffect(deltaTime);
   }
-  
-  this.membraneNoiseTime += deltaTime * this.membraneNoiseSpeed;
-  this.updateMembranePoints();
-  
-  // Update pulse effect
-  this.updatePulseEffect(deltaTime);
-}
   
   updatePulseEffect(deltaTime: number): void {
     // Update pulse animation
@@ -125,61 +126,62 @@ export class BaseCell implements Cell {
   }
   
   updateMembranePoints(): void {
-  // Safety check for membrane points
-  if (!this.membranePoints || !this.membraneTargetPoints || 
-      !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
-    const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
-    this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
-    this.membraneTargetPoints = [...this.membranePoints];
-    return;
+    // Safety check for membrane points
+    if (!this.membranePoints || !this.membraneTargetPoints || 
+        !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
+      const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+      this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+      this.membraneTargetPoints = [...this.membranePoints];
+      return;
+    }
+    
+    const numPoints = this.membranePoints.length;
+    
+    // Calculate velocity magnitude for stretching effect
+    const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
+    const stretchFactor = Math.min(0.3, speed * 0.001); // Cap stretching
+    
+    // Calculate stretch direction
+    let stretchX = 0;
+    let stretchY = 0;
+    
+    if (speed > 0) {
+      stretchX = this.velocity.x / speed;
+      stretchY = this.velocity.y / speed;
+    }
+    
+    // Generate new target points with noise and stretching
+    for (let i = 0; i < numPoints; i++) {
+      const angle = (i / numPoints) * Math.PI * 2;
+      
+      // Basic noise effect
+      const noise = Math.sin(angle * 3 + this.membraneNoiseTime) * 0.1 + 0.9;
+      
+      // Pulse effect
+      const pulseNoise = 1 + (this.pulseEffect * 0.05);
+      
+      // Stretching effect based on velocity
+      const stretch = 1 + stretchFactor * Math.cos(angle - Math.atan2(stretchY, stretchX)) * this.elasticity;
+      
+      // Combine effects
+      const totalEffect = noise * pulseNoise * stretch;
+      
+      const x = this.position.x + Math.cos(angle) * this.radius * totalEffect;
+      const y = this.position.y + Math.sin(angle) * this.radius * totalEffect;
+      
+      this.membraneTargetPoints[i] = { x, y };
+    }
+    
+    // IMPROVED: More responsive membrane updates
+    // Increase interpolation factor for faster membrane response
+    for (let i = 0; i < numPoints; i++) {
+      this.membranePoints[i] = lerpVector(
+        this.membranePoints[i],
+        this.membraneTargetPoints[i],
+        0.3 // Increased from 0.1 to 0.3 for faster response
+      );
+    }
   }
-  
-  const numPoints = this.membranePoints.length;
-  
-  // Calculate velocity magnitude for stretching effect
-  const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
-  const stretchFactor = Math.min(0.3, speed * 0.001); // Cap stretching
-  
-  // Calculate stretch direction
-  let stretchX = 0;
-  let stretchY = 0;
-  
-  if (speed > 0) {
-    stretchX = this.velocity.x / speed;
-    stretchY = this.velocity.y / speed;
-  }
-  
-  // Generate new target points with noise and stretching
-  for (let i = 0; i < numPoints; i++) {
-    const angle = (i / numPoints) * Math.PI * 2;
-    
-    // Basic noise effect
-    const noise = Math.sin(angle * 3 + this.membraneNoiseTime) * 0.1 + 0.9;
-    
-    // Pulse effect
-    const pulseNoise = 1 + (this.pulseEffect * 0.05);
-    
-    // Stretching effect based on velocity
-    const stretch = 1 + stretchFactor * Math.cos(angle - Math.atan2(stretchY, stretchX)) * this.elasticity;
-    
-    // Combine effects
-    const totalEffect = noise * pulseNoise * stretch;
-    
-    const x = this.position.x + Math.cos(angle) * this.radius * totalEffect;
-    const y = this.position.y + Math.sin(angle) * this.radius * totalEffect;
-    
-    this.membraneTargetPoints[i] = { x, y };
-  }
-  
-  // Smoothly interpolate current points toward target points
-  for (let i = 0; i < numPoints; i++) {
-    this.membranePoints[i] = lerpVector(
-      this.membranePoints[i],
-      this.membraneTargetPoints[i],
-      0.1
-    );
-  }
-}
   
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
     // Safety check for camera
@@ -246,6 +248,11 @@ export class BaseCell implements Cell {
     
     // Draw inner details (organelles)
     this.drawCellDetails(ctx, screenPos, screenRadius);
+    
+    // Add trail effect for fast-moving cells
+    if (Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y) > 100) {
+      this.addTrailEffect(ctx, camera);
+    }
   }
   
   drawCellDetails(ctx: CanvasRenderingContext2D, screenPos: Vector2D, screenRadius: number): void {
@@ -280,13 +287,23 @@ export class BaseCell implements Cell {
       y: force.y / this.mass
     };
     
-    this.velocity = add(this.velocity, acceleration);
+    this.velocity.x += acceleration.x;
+    this.velocity.y += acceleration.y;
     
-    // Limit maximum velocity based on cell size (smaller cells can move faster)
-    const maxSpeed = 200 / (this.radius * 0.5);
-    this.velocity = limit(this.velocity, maxSpeed);
+    // EXTREMELY INCREASED maximum velocity for near-instantaneous movement
+    // Increased to a very high value for responsive gameplay
+    const maxSpeed = 5000 / (this.radius * 0.5);
+    
+    // Calculate current speed
+    const currentSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
+    
+    // If speed exceeds max, scale it down
+    if (currentSpeed > maxSpeed) {
+      const scale = maxSpeed / currentSpeed;
+      this.velocity.x *= scale;
+      this.velocity.y *= scale;
+    }
   }
-  
   // Apply a repulsion force from another cell or object
   applyRepulsion(otherPos: Vector2D, strength: number = 1): void {
     const direction = subtract(this.position, otherPos);
@@ -340,29 +357,95 @@ export class BaseCell implements Cell {
     }
   }
   
-  // Helper function to subtract vectors
-  subtract(a: Vector2D, b: Vector2D): Vector2D {
-    return {
-      x: a.x - b.x,
-      y: a.y - b.y
+  // Add a trail effect behind the cell when moving fast
+  addTrailEffect(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    // Only add trail if moving fast enough
+    const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
+    if (speed < 100) return;
+    
+    // Calculate trail points
+    const trailLength = this.radius * 2;
+    const direction = normalize(this.velocity);
+    
+    // Trail start position (behind the cell)
+    const trailStart = {
+      x: this.position.x - direction.x * trailLength,
+      y: this.position.y - direction.y * trailLength
     };
+    
+    // Convert to screen coordinates
+    const screenPos = camera.worldToScreen(this.position);
+    const screenTrailStart = camera.worldToScreen(trailStart);
+    
+    // Draw trail
+    const gradient = ctx.createLinearGradient(
+      screenTrailStart.x, screenTrailStart.y,
+      screenPos.x, screenPos.y
+    );
+    
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    gradient.addColorStop(1, `${this.color}80`); // 50% opacity
+    
+    ctx.beginPath();
+    ctx.moveTo(screenTrailStart.x, screenTrailStart.y);
+    ctx.lineTo(screenPos.x, screenPos.y);
+    ctx.lineWidth = this.radius * camera.scale * 0.8;
+    ctx.strokeStyle = gradient;
+    ctx.lineCap = 'round';
+    ctx.stroke();
   }
   
-  // Helper function to normalize a vector
-  normalize(vector: Vector2D): Vector2D {
-    const mag = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
-    if (mag === 0) return { x: 0, y: 0 };
-    return {
-      x: vector.x / mag,
-      y: vector.y / mag
-    };
+  // Add a glow effect to the cell (for power-ups or special states)
+  addGlowEffect(ctx: CanvasRenderingContext2D, screenPos: Vector2D, screenRadius: number, color: string, intensity: number = 0.5): void {
+    // Create a glow effect around the cell
+    const glowSize = screenRadius * 1.5;
+    const gradient = ctx.createRadialGradient(
+      screenPos.x, screenPos.y, screenRadius * 0.8,
+      screenPos.x, screenPos.y, glowSize
+    );
+    
+    // Make the glow fade out from the cell edge
+    gradient.addColorStop(0, `${color}${Math.floor(intensity * 99).toString(16)}`);
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    
+    ctx.beginPath();
+    ctx.arc(screenPos.x, screenPos.y, glowSize, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
   }
   
-  // Helper function to multiply a vector by a scalar
-  multiply(vector: Vector2D, scalar: number): Vector2D {
-    return {
-      x: vector.x * scalar,
-      y: vector.y * scalar
-    };
+  // Add a ripple effect when the cell changes size dramatically
+  addRippleEffect(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    // This would be called when the cell grows or shrinks significantly
+    const screenPos = camera.worldToScreen(this.position);
+    const screenRadius = this.radius * camera.scale;
+    
+    // Draw ripple circles
+    for (let i = 1; i <= 3; i++) {
+      const rippleRadius = screenRadius * (1 + i * 0.2);
+      const opacity = 0.5 - i * 0.15; // Fade out as ripples expand
+      
+      ctx.beginPath();
+      ctx.arc(screenPos.x, screenPos.y, rippleRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${opacity})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+  
+  // Add a pulsating effect to highlight the cell
+  addPulseHighlight(ctx: CanvasRenderingContext2D, camera: Camera, color: string = '#ffffff'): void {
+    const screenPos = camera.worldToScreen(this.position);
+    const baseRadius = this.radius * camera.scale;
+    
+    // Calculate pulse size based on pulse effect
+    const pulseRadius = baseRadius * (1 + this.pulseEffect * 0.2);
+    
+    // Draw pulsating ring
+    ctx.beginPath();
+    ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = `${color}${Math.floor((1 - this.pulseEffect) * 99).toString(16)}`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
   }
 }

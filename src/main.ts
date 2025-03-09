@@ -1,14 +1,124 @@
 // src/main.ts
 import './style.css';
 import { Game } from './game';
+import { randomColor } from './utils';
+
+// Background animation for welcome screen
+function setupBackgroundAnimation() {
+  const canvas = document.createElement('canvas');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  
+  const backgroundCanvas = document.getElementById('background-canvas');
+  if (backgroundCanvas) {
+    backgroundCanvas.appendChild(canvas);
+  }
+  
+  const cells: {
+    x: number;
+    y: number;
+    radius: number;
+    color: string;
+    vx: number;
+    vy: number;
+  }[] = [];
+  
+  // Create random cells
+  for (let i = 0; i < 50; i++) {
+    cells.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      radius: 5 + Math.random() * 30,
+      color: randomColor(),
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5
+    });
+  }
+  
+  function animate() {
+    if (!ctx) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Update and draw cells
+    for (const cell of cells) {
+      cell.x += cell.vx;
+      cell.y += cell.vy;
+      
+      // Bounce off walls
+      if (cell.x < 0 || cell.x > canvas.width) cell.vx *= -1;
+      if (cell.y < 0 || cell.y > canvas.height) cell.vy *= -1;
+      
+      // Draw cell
+      ctx.beginPath();
+      ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
+      ctx.fillStyle = cell.color;
+      ctx.fill();
+    }
+    
+    requestAnimationFrame(animate);
+  }
+  
+  animate();
+}
 
 // Initialize the game when the window loads
 window.addEventListener('load', () => {
   // Set debug mode to false by default
   (window as any).debugMode = false;
   
-  // Create and start the game
+  // Setup welcome screen background
+  setupBackgroundAnimation();
+  
+  // Create the game instance
   const game = new Game();
+  
+  // Setup color picker
+  const colorPicker = document.getElementById('color-picker');
+  let selectedColor = '#ff4655'; // Default color
+  
+  if (colorPicker) {
+    const colorOptions = colorPicker.querySelectorAll('.color-option');
+    
+    colorOptions.forEach(option => {
+      option.addEventListener('click', () => {
+        // Remove selected class from all options
+        colorOptions.forEach(opt => opt.classList.remove('selected'));
+        
+        // Add selected class to clicked option
+        option.classList.add('selected');
+        
+        // Get selected color
+        selectedColor = option.getAttribute('data-color') || '#ff4655';
+      });
+    });
+  }
+  
+  // Setup play button
+  const playButton = document.getElementById('play-button');
+  const welcomeScreen = document.getElementById('welcome-screen');
+  const playerNameInput = document.getElementById('player-name') as HTMLInputElement;
+  
+  if (playButton && welcomeScreen && playerNameInput) {
+    playButton.addEventListener('click', () => {
+      // Get player name (use default if empty)
+      let playerName = playerNameInput.value.trim();
+      if (!playerName) {
+        playerName = "Player" + Math.floor(Math.random() * 1000);
+      }
+      
+      // Set player name and color
+      game.playerName = playerName;
+      game.playerColor = selectedColor;
+      
+      // Hide welcome screen
+      welcomeScreen.style.display = 'none';
+      
+      // Start the game
+      game.start();
+    });
+  }
   
   // Add event listener for restart button
   const restartButton = document.getElementById('restart-button');
@@ -32,15 +142,6 @@ window.addEventListener('load', () => {
       console.log("Debug mode:", (window as any).debugMode);
     }
   });
-  
-  // Add custom name input before starting
-  const playerName = prompt("Enter your name:", "Player" + Math.floor(Math.random() * 1000));
-  if (playerName) {
-    game.playerName = playerName;
-  }
-  
-  // Start the game after name input
-  game.start();
   
   // Add resize handler
   window.addEventListener('resize', () => {

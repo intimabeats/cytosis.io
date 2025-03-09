@@ -1,6 +1,4 @@
-// [v1.0-Part3] Virus implementation
-// #=== 80% ===#
-
+// src/virus.ts
 import { Virus, Cell, Vector2D, Camera } from './types';
 import { generateId, radiusFromMass } from './utils';
 
@@ -16,6 +14,10 @@ export class GameVirus implements Virus {
   spikeLength: number;
   pulseTime: number;
   pulseAmount: number;
+  rotationAngle: number;
+  rotationSpeed: number;
+  growthStage: number;
+  maxGrowthStage: number;
   
   constructor(position: Vector2D) {
     this.id = generateId();
@@ -29,6 +31,11 @@ export class GameVirus implements Virus {
     this.spikeLength = 10; // Length of spikes
     this.pulseTime = 0;
     this.pulseAmount = 0.1;
+// src/virus.ts (continuação)
+    this.rotationAngle = 0;
+    this.rotationSpeed = 0.2 + Math.random() * 0.3; // Slow rotation
+    this.growthStage = 1;
+    this.maxGrowthStage = 5; // Virus splits after reaching max growth
   }
   
   update(deltaTime: number): void {
@@ -51,6 +58,12 @@ export class GameVirus implements Virus {
     if (this.pulseTime > Math.PI * 2) {
       this.pulseTime -= Math.PI * 2;
     }
+    
+    // Update rotation
+    this.rotationAngle += this.rotationSpeed * deltaTime;
+    if (this.rotationAngle > Math.PI * 2) {
+      this.rotationAngle -= Math.PI * 2;
+    }
   }
   
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
@@ -70,23 +83,51 @@ export class GameVirus implements Virus {
     const pulsedRadius = screenRadius * (1 + pulse);
     const pulsedSpikeLength = screenSpikeLength * (1 + pulse);
     
+    // Draw virus glow
+    const glowRadius = pulsedRadius * 1.5;
+    const glowGradient = ctx.createRadialGradient(
+      screenPos.x, screenPos.y, pulsedRadius,
+      screenPos.x, screenPos.y, glowRadius
+    );
+    glowGradient.addColorStop(0, 'rgba(0, 255, 0, 0.3)');
+    glowGradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
+    
+    ctx.beginPath();
+    ctx.arc(screenPos.x, screenPos.y, glowRadius, 0, Math.PI * 2);
+    ctx.fillStyle = glowGradient;
+    ctx.fill();
+    
     // Draw virus body
     ctx.beginPath();
     ctx.arc(screenPos.x, screenPos.y, pulsedRadius, 0, Math.PI * 2);
-    ctx.fillStyle = '#003300'; // Dark green center
+    
+    // Create gradient for body
+    const bodyGradient = ctx.createRadialGradient(
+      screenPos.x, screenPos.y, 0,
+      screenPos.x, screenPos.y, pulsedRadius
+    );
+    bodyGradient.addColorStop(0, '#006600');
+    bodyGradient.addColorStop(0.7, '#004400');
+    bodyGradient.addColorStop(1, '#003300');
+    
+    ctx.fillStyle = bodyGradient;
     ctx.fill();
     
-    // Draw spikes
+    // Draw spikes with rotation
+    ctx.save();
+    ctx.translate(screenPos.x, screenPos.y);
+    ctx.rotate(this.rotationAngle);
+    
     ctx.beginPath();
     for (let i = 0; i < this.spikes; i++) {
       const angle = (i / this.spikes) * Math.PI * 2;
       const innerRadius = pulsedRadius;
       const outerRadius = pulsedRadius + pulsedSpikeLength;
       
-      const innerX = screenPos.x + Math.cos(angle) * innerRadius;
-      const innerY = screenPos.y + Math.sin(angle) * innerRadius;
-      const outerX = screenPos.x + Math.cos(angle) * outerRadius;
-      const outerY = screenPos.y + Math.sin(angle) * outerRadius;
+      const innerX = Math.cos(angle) * innerRadius;
+      const innerY = Math.sin(angle) * innerRadius;
+      const outerX = Math.cos(angle) * outerRadius;
+      const outerY = Math.sin(angle) * outerRadius;
       
       ctx.moveTo(innerX, innerY);
       ctx.lineTo(outerX, outerY);
@@ -99,15 +140,46 @@ export class GameVirus implements Virus {
     ctx.beginPath();
     for (let i = 0; i < this.spikes / 2; i++) {
       const angle = (i / (this.spikes / 2)) * Math.PI * 2;
-      const x = screenPos.x + Math.cos(angle) * pulsedRadius * 0.6;
-      const y = screenPos.y + Math.sin(angle) * pulsedRadius * 0.6;
+      const x = Math.cos(angle) * pulsedRadius * 0.6;
+      const y = Math.sin(angle) * pulsedRadius * 0.6;
       
-      ctx.moveTo(screenPos.x, screenPos.y);
+      ctx.moveTo(0, 0);
       ctx.lineTo(x, y);
     }
     ctx.strokeStyle = '#006600';
     ctx.lineWidth = 2;
     ctx.stroke();
+    
+    // Draw growth indicator
+    if (this.growthStage > 1) {
+      ctx.beginPath();
+      ctx.arc(0, 0, pulsedRadius * 0.3, 0, Math.PI * 2);
+      
+      // Color based on growth stage
+      const stageColors = ['#006600', '#00aa00', '#00ff00', '#aaff00', '#ffff00'];
+      ctx.fillStyle = stageColors[Math.min(this.growthStage - 1, stageColors.length - 1)];
+      ctx.fill();
+      
+      // Draw growth stage number
+      ctx.fillStyle = '#000000';
+      ctx.font = `${pulsedRadius * 0.3}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.growthStage.toString(), 0, 0);
+    }
+    
+    ctx.restore();
+    
+    // Draw danger indicator if virus is about to split
+    if (this.growthStage >= this.maxGrowthStage - 1) {
+      const warningOpacity = 0.5 + 0.5 * Math.sin(this.pulseTime * 4);
+      
+      ctx.beginPath();
+      ctx.arc(screenPos.x, screenPos.y, pulsedRadius * 1.3, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 0, 0, ${warningOpacity})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
   }
   
   canSplit(cell: Cell): boolean {
@@ -130,8 +202,23 @@ export class GameVirus implements Virus {
     this.mass += 10;
     this.radius = radiusFromMass(this.mass);
     
-    // If virus gets too big, it splits
-    if (this.radius > 80) {
+    // Update growth stage
+    const newGrowthStage = Math.floor(this.radius / 20);
+    if (newGrowthStage > this.growthStage) {
+      this.growthStage = newGrowthStage;
+      
+      // Create growth effect
+      const growthEvent = new CustomEvent('virus-grew', {
+        detail: {
+          position: { ...this.position },
+          stage: this.growthStage
+        }
+      });
+      window.dispatchEvent(growthEvent);
+    }
+    
+    // If virus gets too big or reaches max growth stage, it splits
+    if (this.radius > 80 || this.growthStage >= this.maxGrowthStage) {
       this.splitVirus();
     }
   }
@@ -140,14 +227,83 @@ export class GameVirus implements Virus {
     // Reset size
     this.mass = Math.PI * 40 * 40;
     this.radius = 40;
+    this.growthStage = 1;
     
     // Dispatch event for creating a new virus
     const splitEvent = new CustomEvent('virus-split', {
       detail: {
         position: { ...this.position },
-        velocity: { x: Math.random() * 100 - 50, y: Math.random() * 100 - 50 }
+        velocity: { 
+          x: Math.random() * 100 - 50, 
+          y: Math.random() * 100 - 50 
+        }
       }
     });
     window.dispatchEvent(splitEvent);
+    
+    // Create explosion effect
+    const explosionEvent = new CustomEvent('virus-explosion', {
+      detail: {
+        position: { ...this.position },
+        color: this.color,
+        radius: this.radius
+      }
+    });
+    window.dispatchEvent(explosionEvent);
+  }
+  
+  // New methods for enhanced virus behavior
+  
+  eject(direction: Vector2D): void {
+    // Eject a small virus in the given direction
+    // This could be triggered when a virus is hit by multiple ejected masses
+    
+    // Create a new virus
+    const ejectedVirusEvent = new CustomEvent('virus-ejected', {
+      detail: {
+        position: { ...this.position },
+        velocity: { 
+          x: direction.x * 150, 
+          y: direction.y * 150 
+        },
+        radius: this.radius * 0.7
+      }
+    });
+    window.dispatchEvent(ejectedVirusEvent);
+    
+    // Reduce size of this virus
+    this.mass *= 0.7;
+    this.radius = radiusFromMass(this.mass);
+    this.growthStage = Math.max(1, this.growthStage - 1);
+  }
+  
+  // Method to make virus appear more dangerous as it grows
+  updateAppearance(): void {
+    // Adjust visual properties based on growth stage
+    this.spikes = 12 + (this.growthStage - 1) * 2; // More spikes as it grows
+    this.spikeLength = 10 + (this.growthStage - 1) * 2; // Longer spikes
+    this.pulseAmount = 0.1 + (this.growthStage - 1) * 0.05; // Stronger pulse
+    
+    // Change color as it grows
+    const greenValue = Math.max(0, 255 - (this.growthStage - 1) * 50);
+    const redValue = Math.min(255, (this.growthStage - 1) * 50);
+    this.color = `rgb(${redValue}, ${greenValue}, 0)`;
+  }
+  
+  // Method to make virus attract or repel cells based on size
+  getForceVector(cell: Cell): Vector2D {
+    // If cell is much larger than virus, virus repels it
+    if (cell.radius > this.radius * 1.5) {
+      return {
+        x: (cell.position.x - this.position.x) * 0.1,
+        y: (cell.position.y - this.position.y) * 0.1
+      };
+    }
+    
+    // If cell is similar size or smaller, virus attracts it
+    return {
+      x: (this.position.x - cell.position.x) * 0.05,
+      y: (this.position.y - cell.position.y) * 0.05
+    };
   }
 }

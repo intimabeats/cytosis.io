@@ -1,6 +1,4 @@
-// [v1.0-Part2] Base cell implementation
-// #=== 70% ===#
-
+// src/cell.ts
 import { Cell, Vector2D, Camera } from './types';
 import { 
   generateId, 
@@ -8,7 +6,10 @@ import {
   lerpVector, 
   validatePosition, 
   limit,
-  add
+  add,
+  distance,
+  normalize,
+  multiply
 } from './utils';
 
 export class BaseCell implements Cell {
@@ -24,6 +25,10 @@ export class BaseCell implements Cell {
   membraneNoiseSpeed: number;
   friction: number;
   lastUpdateTime: number;
+  elasticity: number;
+  pulseEffect: number;
+  pulseDirection: number;
+  pulseSpeed: number;
   
   constructor(position: Vector2D, radius: number, color: string) {
     this.id = generateId();
@@ -41,6 +46,12 @@ export class BaseCell implements Cell {
     this.membraneNoiseSpeed = 0.5;
     this.friction = 0.05;
     this.lastUpdateTime = Date.now();
+    
+    // Visual effects
+    this.elasticity = 0.3; // How much the cell stretches when moving
+    this.pulseEffect = 0;
+    this.pulseDirection = 1;
+    this.pulseSpeed = 0.5 + Math.random() * 0.5;
     
     this.updateMembranePoints();
   }
@@ -75,17 +86,58 @@ export class BaseCell implements Cell {
     // Update membrane
     this.membraneNoiseTime += deltaTime * this.membraneNoiseSpeed;
     this.updateMembranePoints();
+    
+    // Update pulse effect
+    this.updatePulseEffect(deltaTime);
+  }
+  
+  updatePulseEffect(deltaTime: number): void {
+    // Update pulse animation
+    this.pulseEffect += this.pulseDirection * this.pulseSpeed * deltaTime;
+    
+    if (this.pulseEffect > 1) {
+      this.pulseEffect = 1;
+      this.pulseDirection = -1;
+    } else if (this.pulseEffect < 0) {
+      this.pulseEffect = 0;
+      this.pulseDirection = 1;
+    }
   }
   
   updateMembranePoints(): void {
     const numPoints = this.membranePoints.length;
     
-    // Generate new target points with some noise
+    // Calculate velocity magnitude for stretching effect
+    const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
+    const stretchFactor = Math.min(0.3, speed * 0.001); // Cap stretching
+    
+    // Calculate stretch direction
+    let stretchX = 0;
+    let stretchY = 0;
+    
+    if (speed > 0) {
+      stretchX = this.velocity.x / speed;
+      stretchY = this.velocity.y / speed;
+    }
+    
+    // Generate new target points with noise and stretching
     for (let i = 0; i < numPoints; i++) {
       const angle = (i / numPoints) * Math.PI * 2;
+      
+      // Basic noise effect
       const noise = Math.sin(angle * 3 + this.membraneNoiseTime) * 0.1 + 0.9;
-      const x = this.position.x + Math.cos(angle) * this.radius * noise;
-      const y = this.position.y + Math.sin(angle) * this.radius * noise;
+      
+      // Pulse effect
+      const pulseNoise = 1 + (this.pulseEffect * 0.05);
+      
+      // Stretching effect based on velocity
+      const stretch = 1 + stretchFactor * Math.cos(angle - Math.atan2(stretchY, stretchX)) * this.elasticity;
+      
+      // Combine effects
+      const totalEffect = noise * pulseNoise * stretch;
+      
+      const x = this.position.x + Math.cos(angle) * this.radius * totalEffect;
+      const y = this.position.y + Math.sin(angle) * this.radius * totalEffect;
       
       this.membraneTargetPoints[i] = { x, y };
     }
@@ -162,6 +214,29 @@ export class BaseCell implements Cell {
     );
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.fill();
+    
+    // Draw inner details (organelles)
+    this.drawCellDetails(ctx, screenPos, screenRadius);
+  }
+  
+  drawCellDetails(ctx: CanvasRenderingContext2D, screenPos: Vector2D, screenRadius: number): void {
+    // Draw small organelles inside the cell
+    const organelleCount = Math.floor(this.radius / 10);
+    
+    for (let i = 0; i < organelleCount; i++) {
+      // Random position within the cell
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * screenRadius * 0.6;
+      
+      const x = screenPos.x + Math.cos(angle) * distance;
+      const y = screenPos.y + Math.sin(angle) * distance;
+      
+      // Draw organelle
+      ctx.beginPath();
+      ctx.arc(x, y, screenRadius * 0.05, 0, Math.PI * 2);
+      ctx.fillStyle = this.adjustColor(this.color, -20);
+      ctx.fill();
+    }
   }
   
   applyForce(force: Vector2D): void {
@@ -183,8 +258,23 @@ export class BaseCell implements Cell {
     this.velocity = limit(this.velocity, maxSpeed);
   }
   
+  // Apply a repulsion force from another cell or object
+  applyRepulsion(otherPos: Vector2D, strength: number = 1): void {
+    const direction = subtract(this.position, otherPos);
+    const dist = distance(this.position, otherPos);
+    
+    // Avoid division by zero
+    if (dist < 0.1) return;
+    
+    // Calculate repulsion force (stronger when closer)
+    const forceMagnitude = strength * (1 / dist);
+    const force = multiply(normalize(direction), forceMagnitude);
+    
+    this.applyForce(force);
+  }
+  
   // Helper to darken/lighten a color
-  private adjustColor(color: string, amount: number): string {
+  adjustColor(color: string, amount: number): string {
     try {
       // For HSL colors
       if (color.startsWith('hsl')) {
@@ -197,11 +287,53 @@ export class BaseCell implements Cell {
         }
       }
       
+      // For hex colors
+      if (color.startsWith('#')) {
+        // Convert hex to rgb
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
+        
+        // Adjust rgb values
+        const newR = Math.max(0, Math.min(255, r + amount));
+        const newG = Math.max(0, Math.min(255, g + amount));
+        const newB = Math.max(0, Math.min(255, b + amount));
+        
+        // Convert back to hex
+        return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+      }
+      
       // Fallback for other color formats
       return color;
     } catch (error) {
       // Return original color if adjustment fails
       return color;
     }
+  }
+  
+  // Helper function to subtract vectors
+  subtract(a: Vector2D, b: Vector2D): Vector2D {
+    return {
+      x: a.x - b.x,
+      y: a.y - b.y
+    };
+  }
+  
+  // Helper function to normalize a vector
+  normalize(vector: Vector2D): Vector2D {
+    const mag = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
+    if (mag === 0) return { x: 0, y: 0 };
+    return {
+      x: vector.x / mag,
+      y: vector.y / mag
+    };
+  }
+  
+  // Helper function to multiply a vector by a scalar
+  multiply(vector: Vector2D, scalar: number): Vector2D {
+    return {
+      x: vector.x * scalar,
+      y: vector.y * scalar
+    };
   }
 }

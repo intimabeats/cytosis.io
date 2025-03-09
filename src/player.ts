@@ -1,6 +1,4 @@
-// [v1.1] Player class implementation with bug fixes
-// #=== 100% ===#
-
+// src/player.ts
 import { Player, PlayerCell, Vector2D, PowerUpType, Camera } from './types';
 import { BaseCell } from './cell';
 import { 
@@ -86,8 +84,13 @@ export class GamePlayer implements Player {
   maxCells: number;
   minSplitMass: number;
   minEjectMass: number;
+  highestScore: number;
+  totalFoodEaten: number;
+  totalPlayersEaten: number;
+  totalVirusHit: number;
+  totalPowerUpsCollected: number;
   
-  constructor(name: string, position: Vector2D, isAI: boolean = false) {
+  constructor(name: string, position: Vector2D, isAI: boolean = false, startRadius: number = 30) {
     this.id = generateId();
     this.name = name;
     this.color = randomColor();
@@ -102,8 +105,15 @@ export class GamePlayer implements Player {
     this.minSplitMass = 35; // Minimum mass required to split (corresponds to radius ~40)
     this.minEjectMass = 35; // Minimum mass required to eject
     
+    // Stats tracking
+    this.highestScore = 0;
+    this.totalFoodEaten = 0;
+    this.totalPlayersEaten = 0;
+    this.totalVirusHit = 0;
+    this.totalPowerUpsCollected = 0;
+    
     // Create initial cell
-    this.addCell(position, 30);
+    this.addCell(position, startRadius);
   }
   
   addCell(position: Vector2D, radius: number): PlayerCell | null {
@@ -167,16 +177,80 @@ export class GamePlayer implements Player {
     this.updatePowerUps(deltaTime);
     
     // Update score based on total mass
-    this.score = Math.floor(this.getTotalMass());
-    
-    // Update UI
-    if (!this.isAI) {
-      const scoreElement = document.getElementById('score');
-      const sizeElement = document.getElementById('size');
+    const newScore = Math.floor(this.getTotalMass());
+    if (newScore > this.score) {
+      this.score = newScore;
       
-      if (scoreElement) scoreElement.textContent = this.score.toString();
-      if (sizeElement) sizeElement.textContent = this.cells.length.toString();
+      // Update highest score
+      if (this.score > this.highestScore) {
+        this.highestScore = this.score;
+      }
     }
+    
+    // Update UI if this is the human player
+    if (!this.isAI) {
+      this.updateUI();
+    }
+  }
+  
+  updateUI(): void {
+    const scoreElement = document.getElementById('score');
+    const sizeElement = document.getElementById('size');
+    
+    if (scoreElement) scoreElement.textContent = this.score.toString();
+    if (sizeElement) sizeElement.textContent = this.cells.length.toString();
+    
+    // Update power-up indicators
+    this.updatePowerUpIndicators();
+  }
+  
+  updatePowerUpIndicators(): void {
+    // Remove existing indicators
+    const statsElement = document.getElementById('stats');
+    if (!statsElement) return;
+    
+    // Remove existing power-up indicators
+    const existingIndicators = statsElement.querySelectorAll('.power-up-indicator');
+    existingIndicators.forEach(el => el.remove());
+    
+    // Add current power-up indicators
+    this.activeEffects.forEach((timeLeft, type) => {
+      const indicator = document.createElement('div');
+      indicator.className = 'power-up-indicator';
+      
+      // Set color based on power-up type
+      switch (type) {
+        case PowerUpType.SPEED:
+          indicator.style.backgroundColor = '#00ffff'; // Cyan
+          indicator.title = `Speed Boost: ${timeLeft.toFixed(1)}s`;
+          break;
+        case PowerUpType.SHIELD:
+          indicator.style.backgroundColor = '#ffff00'; // Yellow
+          indicator.title = `Shield: ${timeLeft.toFixed(1)}s`;
+          break;
+        case PowerUpType.MASS_BOOST:
+          indicator.style.backgroundColor = '#ff00ff'; // Magenta
+          indicator.title = `Mass Boost: ${timeLeft.toFixed(1)}s`;
+          break;
+        case PowerUpType.INVISIBILITY:
+          indicator.style.backgroundColor = '#888888'; // Gray
+          indicator.title = `Invisibility: ${timeLeft.toFixed(1)}s`;
+          break;
+      }
+      
+      // Add timer text
+      const timerText = document.createElement('span');
+      timerText.textContent = timeLeft.toFixed(1);
+      timerText.style.fontSize = '10px';
+      timerText.style.position = 'absolute';
+      timerText.style.top = '50%';
+      timerText.style.left = '50%';
+      timerText.style.transform = 'translate(-50%, -50%)';
+      indicator.appendChild(timerText);
+      
+      // Add to stats
+      statsElement.appendChild(indicator);
+    });
   }
   
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
@@ -229,6 +303,46 @@ export class GamePlayer implements Player {
       ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
       ctx.lineWidth = 5;
       ctx.stroke();
+      
+      // Add pulsing effect to shield
+      const pulseRadius = screenShieldRadius * (1 + Math.sin(Date.now() / 200) * 0.05);
+      ctx.beginPath();
+      ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    
+    // Render speed boost effect if active
+    if (this.hasEffect(PowerUpType.SPEED)) {
+      // Draw speed lines behind the player
+      const trailLength = this.getMaxRadius() * 2;
+      const trailWidth = this.getMaxRadius() * 0.5;
+      
+      ctx.beginPath();
+      ctx.moveTo(
+        screenPos.x - this.targetDirection.x * trailLength,
+        screenPos.y - this.targetDirection.y * trailLength
+      );
+      ctx.lineTo(screenPos.x, screenPos.y);
+      ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+      ctx.lineWidth = trailWidth * camera.scale;
+      ctx.stroke();
+    }
+    
+    // Render invisibility effect if active
+    if (this.hasEffect(PowerUpType.INVISIBILITY) && !this.isAI) {
+      // Draw a faint outline for the human player to see their own cells
+      for (const cell of this.cells) {
+        const cellPos = camera.worldToScreen(cell.position);
+        const cellRadius = cell.radius * camera.scale;
+        
+        ctx.beginPath();
+        ctx.arc(cellPos.x, cellPos.y, cellRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
   }
 
@@ -266,6 +380,9 @@ export class GamePlayer implements Player {
             // Remove the second cell
             this.cells.splice(j, 1);
             
+            // Create merge effect
+            this.createMergeEffect(cellA.position, cellB.position, this.color);
+            
             // Restart the loop since we modified the array
             i = -1;
             break;
@@ -277,6 +394,18 @@ export class GamePlayer implements Player {
         }
       }
     }
+  }
+  
+  private createMergeEffect(pos1: Vector2D, pos2: Vector2D, color: string): void {
+    // Dispatch event for particle effect
+    const mergeEvent = new CustomEvent('cells-merged', {
+      detail: {
+        position1: pos1,
+        position2: pos2,
+        color: color
+      }
+    });
+    window.dispatchEvent(mergeEvent);
   }
   
   private updatePowerUps(deltaTime: number): void {
@@ -294,6 +423,15 @@ export class GamePlayer implements Player {
             cell.radius = radiusFromMass(cell.mass);
           }
         }
+        
+        // Create effect expiration event
+        const expirationEvent = new CustomEvent('power-up-expired', {
+          detail: {
+            player: this,
+            type: type
+          }
+        });
+        window.dispatchEvent(expirationEvent);
       } else {
         this.activeEffects.set(type, newTime);
       }
@@ -367,9 +505,12 @@ export class GamePlayer implements Player {
           };
           
           const newCell = new PlayerCell(newPos, newRadius, this.color, this.id);
+          
+          // Apply velocity in the direction of the split with a boost
+          const splitSpeed = 300 + newRadius * 2; // Larger cells split faster
           newCell.velocity = {
-            x: dir.x * 200,
-            y: dir.y * 200
+            x: dir.x * splitSpeed,
+            y: dir.y * splitSpeed
           };
           
           // Reset merge timers
@@ -494,6 +635,9 @@ export class GamePlayer implements Player {
         break;
     }
     
+    // Update stats
+    this.totalPowerUpsCollected++;
+    
     // Create power-up event for sound effects or visual feedback
     const powerUpEvent = new CustomEvent('player-powerup-applied', {
       detail: {
@@ -599,5 +743,30 @@ export class GamePlayer implements Player {
       console.error("Error calculating max radius:", error);
       return 30; // Default fallback
     }
+  }
+  
+  // New methods for stats tracking
+  
+  recordFoodEaten(): void {
+    this.totalFoodEaten++;
+  }
+  
+  recordPlayerEaten(): void {
+    this.totalPlayersEaten++;
+  }
+  
+  recordVirusHit(): void {
+    this.totalVirusHit++;
+  }
+  
+  getStats(): any {
+    return {
+      score: this.score,
+      highestScore: this.highestScore,
+      totalFoodEaten: this.totalFoodEaten,
+      totalPlayersEaten: this.totalPlayersEaten,
+      totalVirusHit: this.totalVirusHit,
+      totalPowerUpsCollected: this.totalPowerUpsCollected
+    };
   }
 }

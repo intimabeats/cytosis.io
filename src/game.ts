@@ -1,6 +1,4 @@
-// [v1.1] Main game logic with restart functionality
-// #=== 100% ===#
-
+// src/game.ts (início)
 import { GameCamera } from './camera';
 import { Controls } from './controls';
 import { Renderer } from './renderer';
@@ -39,6 +37,12 @@ export class Game {
   aiControllers: Map<string, AIController>;
   particleSystem: ParticleSystem;
   debugMode: boolean;
+  foodSpawnTimer: number;
+  virusSpawnTimer: number;
+  powerUpSpawnTimer: number;
+  aiSpawnTimer: number;
+  gameTime: number;
+  difficultyLevel: number;
   
   constructor() {
     // Initialize canvas
@@ -68,16 +72,16 @@ export class Game {
     this.aiControllers = new Map();
     this.debugMode = false;
     
+    // Timers for spawning entities
+    this.foodSpawnTimer = 0;
+    this.virusSpawnTimer = 0;
+    this.powerUpSpawnTimer = 0;
+    this.aiSpawnTimer = 0;
+    this.gameTime = 0;
+    this.difficultyLevel = 1;
+    
     // Set up event listeners
     this.setupEventListeners();
-    
-    // Set up debug mode (press D to toggle)
-    window.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 'd') {
-        this.debugMode = !this.debugMode;
-        console.log("Debug mode:", this.debugMode);
-      }
-    });
   }
   
   start(): void {
@@ -95,6 +99,8 @@ export class Game {
     // Start game loop
     this.running = true;
     this.lastTime = performance.now();
+    this.gameTime = 0;
+    this.difficultyLevel = 1;
     requestAnimationFrame(this.gameLoop.bind(this));
   }
   
@@ -124,6 +130,14 @@ export class Game {
     this.camera.scale = 1;
     this.camera.targetScale = 1;
     
+    // Reset timers
+    this.foodSpawnTimer = 0;
+    this.virusSpawnTimer = 0;
+    this.powerUpSpawnTimer = 0;
+    this.aiSpawnTimer = 0;
+    this.gameTime = 0;
+    this.difficultyLevel = 1;
+    
     // Make sure game is running
     if (!this.running) {
       this.running = true;
@@ -146,11 +160,24 @@ export class Game {
     }
   }
   
+  handleResize(): void {
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+    this.camera.resize(window.innerWidth, window.innerHeight);
+    this.renderer.resize();
+  }
+// src/game.ts (continuação)
   private gameLoop(timestamp: number): void {
     try {
       // Calculate delta time
       const deltaTime = Math.min((timestamp - this.lastTime) / 1000, 0.1); // Cap at 100ms
       this.lastTime = timestamp;
+      
+      // Update game time
+      this.gameTime += deltaTime;
+      
+      // Update difficulty level based on game time
+      this.updateDifficulty();
       
       // Update game state
       this.update(deltaTime);
@@ -167,6 +194,27 @@ export class Game {
       // Try to recover and continue
       this.lastTime = performance.now();
       requestAnimationFrame(this.gameLoop.bind(this));
+    }
+  }
+  
+  private updateDifficulty(): void {
+    // Increase difficulty every 2 minutes
+    const newLevel = Math.floor(this.gameTime / 120) + 1;
+    
+    if (newLevel > this.difficultyLevel) {
+      this.difficultyLevel = newLevel;
+      console.log(`Difficulty increased to level ${this.difficultyLevel}`);
+      
+      // Spawn more viruses and AI players at higher difficulties
+      if (this.difficultyLevel > 1) {
+        for (let i = 0; i < this.difficultyLevel - 1; i++) {
+          this.spawnVirus();
+        }
+        
+        if (this.difficultyLevel % 2 === 0) {
+          this.spawnAI();
+        }
+      }
     }
   }
   
@@ -264,18 +312,15 @@ export class Game {
     // Update camera
     this.camera.update(deltaTime);
     
-    // Spawn new food if needed
-    this.spawnFood();
-    
-    // Spawn power-ups occasionally
-    this.spawnPowerUps(deltaTime);
+    // Update spawn timers
+    this.updateSpawnTimers(deltaTime);
     
     // Update leaderboard
     this.updateLeaderboard();
     
     // Check if human player is dead
     if (this.humanPlayer && this.humanPlayer.cells.length === 0) {
-      this.respawnPlayer();
+      this.handlePlayerDeath();
     }
     
     // Keep entities within world bounds
@@ -287,6 +332,56 @@ export class Game {
     }
   }
   
+  private updateSpawnTimers(deltaTime: number): void {
+    // Update food spawn timer
+    this.foodSpawnTimer -= deltaTime;
+    if (this.foodSpawnTimer <= 0) {
+      this.spawnFood();
+      // Reset timer (faster spawning at higher difficulties)
+      this.foodSpawnTimer = 0.5 / this.difficultyLevel;
+    }
+    
+    // Update virus spawn timer
+    this.virusSpawnTimer -= deltaTime;
+    if (this.virusSpawnTimer <= 0 && this.gameState.viruses.length < 20 + this.difficultyLevel * 2) {
+      this.spawnVirus();
+      // Reset timer
+      this.virusSpawnTimer = 15 - this.difficultyLevel;
+    }
+    
+    // Update power-up spawn timer
+    this.powerUpSpawnTimer -= deltaTime;
+    if (this.powerUpSpawnTimer <= 0) {
+      this.spawnPowerUp();
+      // Reset timer
+      this.powerUpSpawnTimer = 20 - this.difficultyLevel * 2;
+    }
+    
+    // Update AI spawn timer
+    this.aiSpawnTimer -= deltaTime;
+    if (this.aiSpawnTimer <= 0 && this.gameState.players.size < 15 + this.difficultyLevel) {
+      this.spawnAI();
+      // Reset timer
+      this.aiSpawnTimer = 30 - this.difficultyLevel * 3;
+    }
+  }
+  
+  private handlePlayerDeath(): void {
+    // Show game over screen
+    this.showGameOver();
+    
+    // Create explosion effect at player's last position
+    if (this.humanPlayer) {
+      const lastPosition = this.humanPlayer.getAveragePosition();
+      this.particleSystem.createExplosion(
+        lastPosition,
+        this.humanPlayer.color,
+        50,  // More particles for dramatic effect
+        20   // Larger particles
+      );
+    }
+  }
+  
   private showDebugInfo(): void {
     console.log({
       players: this.gameState.players.size,
@@ -294,7 +389,9 @@ export class Game {
       viruses: this.gameState.viruses.length,
       powerUps: this.gameState.powerUps.length,
       particles: this.gameState.particles.length,
-      fps: Math.round(1 / ((performance.now() - this.lastTime) / 1000))
+      fps: Math.round(1 / ((performance.now() - this.lastTime) / 1000)),
+      gameTime: Math.floor(this.gameTime),
+      difficulty: this.difficultyLevel
     });
   }
   
@@ -313,12 +410,23 @@ export class Game {
     for (let i = 0; i < 10; i++) {
       this.spawnAI();
     }
+    
+    // Spawn initial power-ups
+    for (let i = 0; i < 5; i++) {
+      this.spawnPowerUp();
+    }
+    
+    // Initialize timers
+    this.foodSpawnTimer = 0.5;
+    this.virusSpawnTimer = 15;
+    this.powerUpSpawnTimer = 20;
+    this.aiSpawnTimer = 30;
   }
   
   private spawnFood(): void {
     // Maintain a minimum amount of food
-    const minFood = 1000;
-    const maxSpawnPerFrame = 5;
+    const minFood = 1000 + this.difficultyLevel * 100;
+    const maxSpawnPerFrame = 5 + this.difficultyLevel;
     
     if (this.gameState.food.length < minFood) {
       const spawnCount = Math.min(minFood - this.gameState.food.length, maxSpawnPerFrame);
@@ -341,58 +449,77 @@ export class Game {
   
   private spawnVirus(): void {
     try {
-      const position = randomPosition(this.gameState.worldSize);
-      const virus = new GameVirus(position);
+      // Avoid spawning viruses too close to the player
+      let position;
+      let tooClose = true;
+      let attempts = 0;
+      
+      while (tooClose && attempts < 10) {
+        position = randomPosition(this.gameState.worldSize);
+        tooClose = false;
+        
+        // Check distance to human player
+        if (this.humanPlayer) {
+          const playerPos = this.humanPlayer.getAveragePosition();
+          const dist = distance(playerPos, position);
+          
+          if (dist < 500) {
+            tooClose = true;
+          }
+        }
+        
+        attempts++;
+      }
+      
+      const virus = new GameVirus(position || randomPosition(this.gameState.worldSize));
       this.gameState.viruses.push(virus);
     } catch (error) {
       console.error("Error spawning virus:", error);
     }
   }
   
-  private spawnPowerUps(deltaTime: number): void {
-    // Spawn power-ups occasionally
-    if (Math.random() < 0.01 * deltaTime) {
-      try {
-        const position = randomPosition(this.gameState.worldSize);
-        const type = Math.floor(Math.random() * 4) as PowerUpType; // 0-3 for different types
-        const powerUp = new GamePowerUp(position, type);
-        this.gameState.powerUps.push(powerUp);
-      } catch (error) {
-        console.error("Error spawning power-up:", error);
-      }
+  private spawnPowerUp(): void {
+    try {
+      const position = randomPosition(this.gameState.worldSize);
+      const type = Math.floor(Math.random() * 4) as PowerUpType; // 0-3 for different types
+      const powerUp = new GamePowerUp(position, type);
+      this.gameState.powerUps.push(powerUp);
+    } catch (error) {
+      console.error("Error spawning power-up:", error);
     }
   }
   
   private spawnAI(): void {
     try {
-      // Create AI player
+      // Create AI player with random position and name
       const position = randomPosition(this.gameState.worldSize);
-      const aiName = "Bot" + Math.floor(Math.random() * 1000);
-      const aiPlayer = new GamePlayer(aiName, position, true);
+      
+      // AI names based on difficulty level
+      const aiNames = [
+        ["Amoeba", "Blob", "Cell", "Dot", "Eater", "Feeder", "Germ", "Hunter"],
+        ["Predator", "Stalker", "Tracker", "Virus", "Watcher", "Xenophage", "Yapper", "Zapper"],
+        ["Devourer", "Eliminator", "Frenzy", "Glutton", "Harvester", "Impaler", "Juggernaut", "Killer"]
+      ];
+      
+      const nameList = aiNames[Math.min(this.difficultyLevel - 1, aiNames.length - 1)];
+      const aiName = nameList[Math.floor(Math.random() * nameList.length)] + Math.floor(Math.random() * 100);
+      
+      // Higher starting mass for AIs at higher difficulty
+      const startingRadius = 30 + (this.difficultyLevel - 1) * 5;
+      const aiPlayer = new GamePlayer(aiName, position, true, startingRadius);
       
       // Add to game state
       this.gameState.players.set(aiPlayer.id, aiPlayer);
       
-      // Create AI controller
-      const aiController = new AIController(aiPlayer, this.gameState.worldSize);
+      // Create AI controller with difficulty-based aggression
+      const aiController = new AIController(aiPlayer, this.gameState.worldSize, this.difficultyLevel);
       this.aiControllers.set(aiPlayer.id, aiController);
     } catch (error) {
       console.error("Error spawning AI:", error);
     }
   }
   
-  private respawnPlayer(): void {
-    if (!this.humanPlayer) return;
-    
-    // Show game over screen instead of immediately respawning
-    this.showGameOver();
-    
-    // Keep the player in the game state but with no cells
-    // This prevents errors but doesn't actually respawn the player
-    // The player will be properly respawned when restart() is called
-  }
-
-	  private checkCollisions(): void {
+  private checkCollisions(): void {
     try {
       // Check player-food collisions
       this.checkPlayerFoodCollisions();
@@ -405,6 +532,9 @@ export class Game {
       
       // Check player-powerup collisions
       this.checkPlayerPowerUpCollisions();
+      
+      // Check ejected mass collisions with viruses
+      this.checkEjectedMassVirusCollisions();
     } catch (error) {
       console.error("Error checking collisions:", error);
     }
@@ -423,6 +553,11 @@ export class Game {
             // Player eats food
             cell.mass += food.value;
             cell.radius = radiusFromMass(cell.mass);
+            
+            // Update player score
+            if (!player.isAI) {
+              player.score += Math.ceil(food.value);
+            }
             
             // Create particle effect
             this.particleSystem.createSplash(
@@ -481,7 +616,7 @@ export class Game {
                 
                 // Check if player B is eliminated
                 if (playerB.cells.length === 0) {
-                  this.eliminatePlayer(playerB);
+                  this.eliminatePlayer(playerB, playerA);
                 }
               } else if (cellB.mass > cellA.mass * 1.1) {
                 // Cell B eats Cell A
@@ -493,7 +628,7 @@ export class Game {
                 
                 // Check if player A is eliminated
                 if (playerA.cells.length === 0) {
-                  this.eliminatePlayer(playerA);
+                  this.eliminatePlayer(playerA, playerB);
                 }
                 
                 // Break inner loop since cell A no longer exists
@@ -511,9 +646,17 @@ export class Game {
   }
   
   private cellEatsCell(eater: any, eaten: any, eaterPlayer: Player, eatenPlayer: Player): void {
-    // Transfer mass
-    eater.mass += eaten.mass * 0.8; // 80% efficiency in mass transfer
+    // Transfer mass with efficiency based on size difference
+    const sizeDifference = eater.mass / eaten.mass;
+    const efficiencyFactor = Math.min(0.9, 0.7 + (sizeDifference - 1.1) * 0.05);
+    
+    eater.mass += eaten.mass * efficiencyFactor;
     eater.radius = radiusFromMass(eater.mass);
+    
+    // Award score to eater
+    if (!eaterPlayer.isAI) {
+      eaterPlayer.score += Math.ceil(eaten.mass);
+    }
     
     // Create particle effect
     this.particleSystem.createExplosion(
@@ -547,14 +690,15 @@ export class Game {
     const dvx = cellB.velocity.x - cellA.velocity.x;
     const dvy = cellB.velocity.y - cellA.velocity.y;
     
-    // Calculate impulse
+    // Calculate impulse with improved physics
     const impulse = 2 * (dvx * nx + dvy * ny) / (cellA.mass + cellB.mass);
     
-    // Apply impulse to both cells
-    cellA.velocity.x += impulse * cellB.mass * nx;
-    cellA.velocity.y += impulse * cellB.mass * ny;
-    cellB.velocity.x -= impulse * cellA.mass * nx;
-    cellB.velocity.y -= impulse * cellA.mass * ny;
+    // Apply impulse to both cells with a boost factor for more responsive bouncing
+    const boostFactor = 1.2;
+    cellA.velocity.x += impulse * cellB.mass * nx * boostFactor;
+    cellA.velocity.y += impulse * cellB.mass * ny * boostFactor;
+    cellB.velocity.x -= impulse * cellA.mass * nx * boostFactor;
+    cellB.velocity.y -= impulse * cellA.mass * ny * boostFactor;
     
     // Move cells apart to prevent sticking
     const overlap = cellA.radius + cellB.radius - dist;
@@ -582,17 +726,26 @@ export class Game {
     );
   }
   
-  private eliminatePlayer(player: Player): void {
+  private eliminatePlayer(eliminated: Player, eliminator: Player): void {
     // Create explosion effect
-    const position = player.getAveragePosition();
-    this.particleSystem.createExplosion(position, player.color, 30, 10);
+    const position = eliminated.getAveragePosition();
+    this.particleSystem.createExplosion(position, eliminated.color, 30, 10);
+    
+    // Award bonus score to eliminator if it's the human player
+    if (!eliminator.isAI) {
+      const bonusScore = 500 + Math.floor(eliminated.score * 0.2);
+      eliminator.score += bonusScore;
+      
+      // Create score popup
+      this.particleSystem.createScorePopup(position, `+${bonusScore}`, '#ffff00');
+    }
     
     // Remove player from game state
-    this.gameState.players.delete(player.id);
+    this.gameState.players.delete(eliminated.id);
     
     // Remove AI controller if it's an AI player
-    if (player.isAI) {
-      this.aiControllers.delete(player.id);
+    if (eliminated.isAI) {
+      this.aiControllers.delete(eliminated.id);
       
       // Spawn a new AI to replace the eliminated one
       setTimeout(() => this.spawnAI(), 2000);
@@ -705,6 +858,31 @@ export class Game {
       }
     });
   }
+  
+  private checkEjectedMassVirusCollisions(): void {
+    // Check ejected mass (food with velocity) collisions with viruses
+    for (let i = 0; i < this.gameState.food.length; i++) {
+      const food = this.gameState.food[i];
+      
+      // Only check food that is moving (ejected mass)
+      if (food.velocity.x === 0 && food.velocity.y === 0) continue;
+      
+      for (let j = 0; j < this.gameState.viruses.length; j++) {
+        const virus = this.gameState.viruses[j];
+        
+        if (checkCollision(food, virus)) {
+          // Virus grows when hit by ejected mass
+          virus.grow();
+          
+          // Remove the ejected mass
+          this.gameState.food.splice(i, 1);
+          i--;
+          break;
+        }
+      }
+    }
+  }
+  
   private enforceWorldBounds(): void {
     const worldWidth = this.gameState.worldSize.x;
     const worldHeight = this.gameState.worldSize.y;
@@ -784,12 +962,32 @@ export class Game {
       .map(player => ({
         id: player.id,
         name: player.name,
-        score: player.score
+        score: player.score,
+        isHuman: !player.isAI
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10); // Top 10 players
     
     this.gameState.leaderboard = players;
+    
+    // Update leaderboard UI
+    const leaderboardElement = document.getElementById('leaderboard-content');
+    if (leaderboardElement) {
+      leaderboardElement.innerHTML = '';
+      
+      players.forEach((player, index) => {
+                const entry = document.createElement('div');
+        
+        // Highlight human player
+        if (player.isHuman) {
+          entry.style.color = '#ffff00'; // Yellow for human player
+          entry.style.fontWeight = 'bold';
+        }
+        
+        entry.textContent = `${index + 1}. ${player.name}: ${player.score}`;
+        leaderboardElement.appendChild(entry);
+      });
+    }
   }
   
   private getAllEntities(): Entity[] {
@@ -851,13 +1049,14 @@ export class Game {
       
       // Create particle effect
       this.particleSystem.createPowerUpEffect(detail.position, detail.color);
+      
+      // Spawn a new power-up to replace the collected one
+      setTimeout(() => this.spawnPowerUp(), 10000);
     });
     
     // Listen for window resize
     window.addEventListener('resize', () => {
-      this.canvas.width = window.innerWidth;
-      this.canvas.height = window.innerHeight;
-      this.camera.resize(window.innerWidth, window.innerHeight);
+      this.handleResize();
     });
     
     // Listen for new custom events

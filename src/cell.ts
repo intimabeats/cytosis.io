@@ -31,65 +31,85 @@ export class BaseCell implements Cell {
   pulseSpeed: number;
   
   constructor(position: Vector2D, radius: number, color: string) {
-    this.id = generateId();
-    this.position = { ...position };
-    this.velocity = { x: 0, y: 0 };
-    this.radius = radius;
-    this.mass = Math.PI * radius * radius;
-    this.color = color;
-    
-    // Membrane properties
-    const numPoints = Math.max(10, Math.floor(radius * 0.8));
+  this.id = generateId();
+  this.position = { ...position };
+  this.velocity = { x: 0, y: 0 };
+  this.radius = radius;
+  this.mass = Math.PI * radius * radius;
+  this.color = color;
+  
+  // Membrane properties - ensure proper initialization
+  const numPoints = Math.max(10, Math.floor(radius * 0.8));
+  try {
     this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
-    this.membraneTargetPoints = [...this.membranePoints];
-    this.membraneNoiseTime = 0;
-    this.membraneNoiseSpeed = 0.5;
-    this.friction = 0.05;
-    this.lastUpdateTime = Date.now();
-    
-    // Visual effects
-    this.elasticity = 0.3; // How much the cell stretches when moving
-    this.pulseEffect = 0;
-    this.pulseDirection = 1;
-    this.pulseSpeed = 0.5 + Math.random() * 0.5;
-    
-    this.updateMembranePoints();
+    this.membraneTargetPoints = JSON.parse(JSON.stringify(this.membranePoints)); // Deep copy
+  } catch (error) {
+    console.error("Error initializing membrane points:", error);
+    // Fallback to simple points
+    this.membranePoints = [];
+    this.membraneTargetPoints = [];
+    for (let i = 0; i < numPoints; i++) {
+      const angle = (i / numPoints) * Math.PI * 2;
+      const x = this.position.x + Math.cos(angle) * this.radius;
+      const y = this.position.y + Math.sin(angle) * this.radius;
+      this.membranePoints.push({ x, y });
+      this.membraneTargetPoints.push({ x, y });
+    }
   }
   
+  this.membraneNoiseTime = 0;
+  this.membraneNoiseSpeed = 0.5;
+  this.friction = 0.05;
+  this.lastUpdateTime = Date.now();
+  
+  // Visual effects
+  this.elasticity = 0.3; // How much the cell stretches when moving
+  this.pulseEffect = 0;
+  this.pulseDirection = 1;
+  this.pulseSpeed = 0.5 + Math.random() * 0.5;
+}
+  
   update(deltaTime: number): void {
-    // Safety check for deltaTime
-    if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
-      const now = Date.now();
-      deltaTime = (now - this.lastUpdateTime) / 1000;
-      this.lastUpdateTime = now;
-      
-      // Still need a valid deltaTime
-      if (deltaTime <= 0 || deltaTime > 1) {
-        deltaTime = 0.016; // Default to 60fps
-      }
-    } else {
-      this.lastUpdateTime = Date.now();
+  // Safety check for deltaTime
+  if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
+    const now = Date.now();
+    deltaTime = (now - this.lastUpdateTime) / 1000;
+    this.lastUpdateTime = now;
+    
+    // Still need a valid deltaTime
+    if (deltaTime <= 0 || deltaTime > 1) {
+      deltaTime = 0.016; // Default to 60fps
     }
-    
-    // Apply friction
-    this.velocity.x *= (1 - this.friction * deltaTime);
-    this.velocity.y *= (1 - this.friction * deltaTime);
-    
-    // Update position
-    this.position.x += this.velocity.x * deltaTime;
-    this.position.y += this.velocity.y * deltaTime;
-    
-    // Validate position to prevent NaN
-    const defaultPos = { x: 0, y: 0 };
-    this.position = validatePosition(this.position, defaultPos);
-    
-    // Update membrane
-    this.membraneNoiseTime += deltaTime * this.membraneNoiseSpeed;
-    this.updateMembranePoints();
-    
-    // Update pulse effect
-    this.updatePulseEffect(deltaTime);
+  } else {
+    this.lastUpdateTime = Date.now();
   }
+  
+  // Apply friction
+  this.velocity.x *= (1 - this.friction * deltaTime);
+  this.velocity.y *= (1 - this.friction * deltaTime);
+  
+  // Update position
+  this.position.x += this.velocity.x * deltaTime;
+  this.position.y += this.velocity.y * deltaTime;
+  
+  // Validate position to prevent NaN
+  const defaultPos = { x: 0, y: 0 };
+  this.position = validatePosition(this.position, defaultPos);
+  
+  // Update membrane - ensure membranePoints and membraneTargetPoints are initialized
+  if (!this.membranePoints || !this.membraneTargetPoints || 
+      !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
+    const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+    this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+    this.membraneTargetPoints = [...this.membranePoints];
+  }
+  
+  this.membraneNoiseTime += deltaTime * this.membraneNoiseSpeed;
+  this.updateMembranePoints();
+  
+  // Update pulse effect
+  this.updatePulseEffect(deltaTime);
+}
   
   updatePulseEffect(deltaTime: number): void {
     // Update pulse animation
@@ -105,52 +125,61 @@ export class BaseCell implements Cell {
   }
   
   updateMembranePoints(): void {
-    const numPoints = this.membranePoints.length;
-    
-    // Calculate velocity magnitude for stretching effect
-    const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
-    const stretchFactor = Math.min(0.3, speed * 0.001); // Cap stretching
-    
-    // Calculate stretch direction
-    let stretchX = 0;
-    let stretchY = 0;
-    
-    if (speed > 0) {
-      stretchX = this.velocity.x / speed;
-      stretchY = this.velocity.y / speed;
-    }
-    
-    // Generate new target points with noise and stretching
-    for (let i = 0; i < numPoints; i++) {
-      const angle = (i / numPoints) * Math.PI * 2;
-      
-      // Basic noise effect
-      const noise = Math.sin(angle * 3 + this.membraneNoiseTime) * 0.1 + 0.9;
-      
-      // Pulse effect
-      const pulseNoise = 1 + (this.pulseEffect * 0.05);
-      
-      // Stretching effect based on velocity
-      const stretch = 1 + stretchFactor * Math.cos(angle - Math.atan2(stretchY, stretchX)) * this.elasticity;
-      
-      // Combine effects
-      const totalEffect = noise * pulseNoise * stretch;
-      
-      const x = this.position.x + Math.cos(angle) * this.radius * totalEffect;
-      const y = this.position.y + Math.sin(angle) * this.radius * totalEffect;
-      
-      this.membraneTargetPoints[i] = { x, y };
-    }
-    
-    // Smoothly interpolate current points toward target points
-    for (let i = 0; i < numPoints; i++) {
-      this.membranePoints[i] = lerpVector(
-        this.membranePoints[i],
-        this.membraneTargetPoints[i],
-        0.1
-      );
-    }
+  // Safety check for membrane points
+  if (!this.membranePoints || !this.membraneTargetPoints || 
+      !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
+    const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+    this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+    this.membraneTargetPoints = [...this.membranePoints];
+    return;
   }
+  
+  const numPoints = this.membranePoints.length;
+  
+  // Calculate velocity magnitude for stretching effect
+  const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
+  const stretchFactor = Math.min(0.3, speed * 0.001); // Cap stretching
+  
+  // Calculate stretch direction
+  let stretchX = 0;
+  let stretchY = 0;
+  
+  if (speed > 0) {
+    stretchX = this.velocity.x / speed;
+    stretchY = this.velocity.y / speed;
+  }
+  
+  // Generate new target points with noise and stretching
+  for (let i = 0; i < numPoints; i++) {
+    const angle = (i / numPoints) * Math.PI * 2;
+    
+    // Basic noise effect
+    const noise = Math.sin(angle * 3 + this.membraneNoiseTime) * 0.1 + 0.9;
+    
+    // Pulse effect
+    const pulseNoise = 1 + (this.pulseEffect * 0.05);
+    
+    // Stretching effect based on velocity
+    const stretch = 1 + stretchFactor * Math.cos(angle - Math.atan2(stretchY, stretchX)) * this.elasticity;
+    
+    // Combine effects
+    const totalEffect = noise * pulseNoise * stretch;
+    
+    const x = this.position.x + Math.cos(angle) * this.radius * totalEffect;
+    const y = this.position.y + Math.sin(angle) * this.radius * totalEffect;
+    
+    this.membraneTargetPoints[i] = { x, y };
+  }
+  
+  // Smoothly interpolate current points toward target points
+  for (let i = 0; i < numPoints; i++) {
+    this.membranePoints[i] = lerpVector(
+      this.membranePoints[i],
+      this.membraneTargetPoints[i],
+      0.1
+    );
+  }
+}
   
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
     // Safety check for camera

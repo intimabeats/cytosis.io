@@ -85,24 +85,33 @@ export class Game {
   }
   
   start(): void {
-    // Create human player
-    const playerPos = {
-      x: this.gameState.worldSize.x / 2,
-      y: this.gameState.worldSize.y / 2
-    };
-    this.humanPlayer = new GamePlayer(this.playerName, playerPos);
-    this.gameState.players.set(this.humanPlayer.id, this.humanPlayer);
-    
-    // Initialize game world
-    this.initializeWorld();
-    
-    // Start game loop
-    this.running = true;
-    this.lastTime = performance.now();
-    this.gameTime = 0;
-    this.difficultyLevel = 1;
-    requestAnimationFrame(this.gameLoop.bind(this));
-  }
+  console.log("Starting game...");
+  
+  // Create human player
+  const playerPos = {
+    x: this.gameState.worldSize.x / 2,
+    y: this.gameState.worldSize.y / 2
+  };
+  console.log("Creating human player at position:", playerPos);
+  this.humanPlayer = new GamePlayer(this.playerName, playerPos);
+  this.gameState.players.set(this.humanPlayer.id, this.humanPlayer);
+  
+  // Initialize game world
+  this.initializeWorld();
+  
+  // Start game loop
+  this.running = true;
+  this.lastTime = performance.now();
+  this.gameTime = 0;
+  this.difficultyLevel = 1;
+  
+  // Set initial camera position
+  this.camera.position = { ...playerPos };
+  this.camera.targetPosition = { ...playerPos };
+  
+  console.log("Game started successfully");
+  requestAnimationFrame(this.gameLoop.bind(this));
+}
   
   restart(): void {
     // Clear existing game state
@@ -219,118 +228,119 @@ export class Game {
   }
   
   private update(deltaTime: number): void {
-    // Update controls
-    this.controls.update();
-    
-    // Update human player direction based on mouse position
-    if (this.humanPlayer && this.humanPlayer.cells.length > 0) {
-      const mousePos = this.controls.getMousePosition();
-      this.humanPlayer.setTargetDirection(mousePos);
-    }
-    
-    // Update all players
-    this.gameState.players.forEach(player => {
-      try {
-        player.update(deltaTime);
-      } catch (error) {
-        console.error("Error updating player:", error);
-      }
-    });
-    
-    // Update AI controllers
-    this.aiControllers.forEach(controller => {
-      try {
-        // Pass a filtered list of entities to avoid undefined issues
-        const validEntities = this.getAllEntities().filter(entity => 
-          entity && entity.position && 
-          typeof entity.position.x === 'number' && 
-          typeof entity.position.y === 'number'
-        );
-        controller.update(deltaTime, validEntities);
-      } catch (error) {
-        console.error("Error updating AI controller:", error);
-      }
-    });
-    
-    // Update food
-    for (let i = 0; i < this.gameState.food.length; i++) {
-      try {
-        this.gameState.food[i].update(deltaTime);
-      } catch (error) {
-        console.error("Error updating food:", error);
-        // Remove problematic food
-        this.gameState.food.splice(i, 1);
-        i--;
-      }
-    }
-    
-    // Update viruses
-    for (let i = 0; i < this.gameState.viruses.length; i++) {
-      try {
-        this.gameState.viruses[i].update(deltaTime);
-      } catch (error) {
-        console.error("Error updating virus:", error);
-        // Remove problematic virus
-        this.gameState.viruses.splice(i, 1);
-        i--;
-      }
-    }
-    
-    // Update power-ups
-    for (let i = 0; i < this.gameState.powerUps.length; i++) {
-      try {
-        this.gameState.powerUps[i].update(deltaTime);
-      } catch (error) {
-        console.error("Error updating power-up:", error);
-        // Remove problematic power-up
-        this.gameState.powerUps.splice(i, 1);
-        i--;
-      }
-    }
-    
-    // Update particles
+  // Update controls
+  this.controls.update();
+  
+  // Update human player direction based on mouse position
+  if (this.humanPlayer && this.humanPlayer.cells.length > 0) {
+    const mousePos = this.controls.getMousePosition();
+    console.log("Mouse position:", mousePos);
+    this.humanPlayer.setTargetDirection(mousePos);
+  }
+  
+  // Update all players
+  this.gameState.players.forEach(player => {
     try {
-      this.particleSystem.update(deltaTime);
-      this.gameState.particles = this.particleSystem.particles;
+      player.update(deltaTime);
     } catch (error) {
-      console.error("Error updating particles:", error);
-      // Clear particles in case of error
-      this.particleSystem = new ParticleSystem();
-      this.gameState.particles = [];
+      console.error("Error updating player:", error);
     }
-    
-    // Check collisions
-    this.checkCollisions();
-    
-    // Update camera to follow human player
-    if (this.humanPlayer && this.humanPlayer.cells.length > 0) {
-      const playerPos = this.humanPlayer.getAveragePosition();
-      const maxRadius = this.humanPlayer.getMaxRadius();
-      this.camera.follow(playerPos, maxRadius);
+  });
+  
+  // Update AI controllers
+  this.aiControllers.forEach(controller => {
+    try {
+      // Pass a filtered list of entities to avoid undefined issues
+      const validEntities = this.getAllEntities().filter(entity => 
+        entity && entity.position && 
+        typeof entity.position.x === 'number' && 
+        typeof entity.position.y === 'number'
+      );
+      controller.update(deltaTime, validEntities);
+    } catch (error) {
+      console.error("Error updating AI controller:", error);
     }
-    
-    // Update camera
-    this.camera.update(deltaTime);
-    
-    // Update spawn timers
-    this.updateSpawnTimers(deltaTime);
-    
-    // Update leaderboard
-    this.updateLeaderboard();
-    
-    // Check if human player is dead
-    if (this.humanPlayer && this.humanPlayer.cells.length === 0) {
-      this.handlePlayerDeath();
-    }
-    
-    // Keep entities within world bounds
-    this.enforceWorldBounds();
-    
-    // Debug info
-    if (this.debugMode) {
-      this.showDebugInfo();
+  });
+  
+  // Update food
+  for (let i = 0; i < this.gameState.food.length; i++) {
+    try {
+      this.gameState.food[i].update(deltaTime);
+    } catch (error) {
+      console.error("Error updating food:", error);
+      // Remove problematic food
+      this.gameState.food.splice(i, 1);
+      i--;
     }
   }
+  
+  // Update viruses
+  for (let i = 0; i < this.gameState.viruses.length; i++) {
+    try {
+      this.gameState.viruses[i].update(deltaTime);
+    } catch (error) {
+      console.error("Error updating virus:", error);
+      // Remove problematic virus
+      this.gameState.viruses.splice(i, 1);
+      i--;
+    }
+  }
+  
+  // Update power-ups
+  for (let i = 0; i < this.gameState.powerUps.length; i++) {
+    try {
+      this.gameState.powerUps[i].update(deltaTime);
+    } catch (error) {
+      console.error("Error updating power-up:", error);
+      // Remove problematic power-up
+      this.gameState.powerUps.splice(i, 1);
+      i--;
+    }
+  }
+  
+  // Update particles
+  try {
+    this.particleSystem.update(deltaTime);
+    this.gameState.particles = this.particleSystem.particles;
+  } catch (error) {
+    console.error("Error updating particles:", error);
+    // Clear particles in case of error
+    this.particleSystem = new ParticleSystem();
+    this.gameState.particles = [];
+  }
+  
+  // Check collisions
+  this.checkCollisions();
+  
+  // Update camera to follow human player
+  if (this.humanPlayer && this.humanPlayer.cells.length > 0) {
+    const playerPos = this.humanPlayer.getAveragePosition();
+    const maxRadius = this.humanPlayer.getMaxRadius();
+    this.camera.follow(playerPos, maxRadius);
+  }
+  
+  // Update camera
+  this.camera.update(deltaTime);
+  
+  // Update spawn timers
+  this.updateSpawnTimers(deltaTime);
+  
+  // Update leaderboard
+  this.updateLeaderboard();
+  
+  // Check if human player is dead
+  if (this.humanPlayer && this.humanPlayer.cells.length === 0) {
+    this.handlePlayerDeath();
+  }
+  
+  // Keep entities within world bounds
+  this.enforceWorldBounds();
+  
+  // Debug info
+  if (this.debugMode) {
+    this.showDebugInfo();
+  }
+}
   
   private updateSpawnTimers(deltaTime: number): void {
     // Update food spawn timer
@@ -396,32 +406,34 @@ export class Game {
   }
   
   private initializeWorld(): void {
-    // Spawn initial food
-    for (let i = 0; i < 1000; i++) {
-      this.spawnFoodItem();
-    }
-    
-    // Spawn viruses
-    for (let i = 0; i < 20; i++) {
-      this.spawnVirus();
-    }
-    
-    // Spawn AI players
-    for (let i = 0; i < 10; i++) {
-      this.spawnAI();
-    }
-    
-    // Spawn initial power-ups
-    for (let i = 0; i < 5; i++) {
-      this.spawnPowerUp();
-    }
-    
-    // Initialize timers
-    this.foodSpawnTimer = 0.5;
-    this.virusSpawnTimer = 15;
-    this.powerUpSpawnTimer = 20;
-    this.aiSpawnTimer = 30;
+  console.log("Initializing world with size:", this.gameState.worldSize);
+  
+  // Spawn initial food
+  for (let i = 0; i < 1000; i++) {
+    this.spawnFoodItem();
   }
+  
+  // Spawn viruses
+  for (let i = 0; i < 20; i++) {
+    this.spawnVirus();
+  }
+  
+  // Spawn AI players
+  for (let i = 0; i < 10; i++) {
+    this.spawnAI();
+  }
+  
+  // Spawn initial power-ups
+  for (let i = 0; i < 5; i++) {
+    this.spawnPowerUp();
+  }
+  
+  // Initialize timers
+  this.foodSpawnTimer = 0.5;
+  this.virusSpawnTimer = 15;
+  this.powerUpSpawnTimer = 20;
+  this.aiSpawnTimer = 30;
+}
   
   private spawnFood(): void {
     // Maintain a minimum amount of food
@@ -438,14 +450,16 @@ export class Game {
   }
   
   private spawnFoodItem(): void {
-    try {
-      const position = randomPosition(this.gameState.worldSize);
-      const food = new GameFood(position);
-      this.gameState.food.push(food);
-    } catch (error) {
-      console.error("Error spawning food:", error);
-    }
+  try {
+    // Ensure we're using the correct format for randomPosition
+    const position = randomPosition(this.gameState.worldSize);
+    console.log("Spawning food at position:", position);
+    const food = new GameFood(position);
+    this.gameState.food.push(food);
+  } catch (error) {
+    console.error("Error spawning food:", error);
   }
+}
   
   private spawnVirus(): void {
     try {
@@ -520,60 +534,73 @@ export class Game {
   }
   
   private checkCollisions(): void {
-    try {
-      // Check player-food collisions
-      this.checkPlayerFoodCollisions();
-      
-      // Check player-player collisions
-      this.checkPlayerPlayerCollisions();
-      
-      // Check player-virus collisions
-      this.checkPlayerVirusCollisions();
-      
-      // Check player-powerup collisions
-      this.checkPlayerPowerUpCollisions();
-      
-      // Check ejected mass collisions with viruses
-      this.checkEjectedMassVirusCollisions();
-    } catch (error) {
-      console.error("Error checking collisions:", error);
-    }
+  try {
+    // Check player-food collisions
+    this.checkPlayerFoodCollisions();
+    
+    // Check player-player collisions
+    this.checkPlayerPlayerCollisions();
+    
+    // Check player-virus collisions
+    this.checkPlayerVirusCollisions();
+    
+    // Check player-powerup collisions
+    this.checkPlayerPowerUpCollisions();
+    
+    // Check ejected mass collisions with viruses
+    this.checkEjectedMassVirusCollisions();
+  } catch (error) {
+    console.error("Error checking collisions:", error);
   }
+}
   
   private checkPlayerFoodCollisions(): void {
-    // For each player
-    this.gameState.players.forEach(player => {
-      // For each cell of the player
-      for (const cell of player.cells) {
-        // Check collision with each food item
-        for (let i = this.gameState.food.length - 1; i >= 0; i--) {
-          const food = this.gameState.food[i];
+  // For each player
+  this.gameState.players.forEach(player => {
+    // Skip if player has no cells
+    if (!player.cells || player.cells.length === 0) return;
+    
+    // For each cell of the player
+    for (const cell of player.cells) {
+      // Skip if cell is invalid
+      if (!cell || !cell.position || typeof cell.radius !== 'number') continue;
+      
+      // Check collision with each food item
+      for (let i = this.gameState.food.length - 1; i >= 0; i--) {
+        const food = this.gameState.food[i];
+        
+        // Skip if food is invalid
+        if (!food || !food.position || typeof food.radius !== 'number') {
+          this.gameState.food.splice(i, 1);
+          continue;
+        }
+        
+        if (checkCollision(cell, food)) {
+          // Player eats food
+          cell.mass += food.value;
+          cell.radius = radiusFromMass(cell.mass);
           
-          if (checkCollision(cell, food)) {
-            // Player eats food
-            cell.mass += food.value;
-            cell.radius = radiusFromMass(cell.mass);
-            
-            // Update player score
-            if (!player.isAI) {
-              player.score += Math.ceil(food.value);
-            }
-            
-            // Create particle effect
-            this.particleSystem.createSplash(
-              food.position,
-              food.color,
-              { x: cell.position.x - food.position.x, y: cell.position.y - food.position.y },
-              5
-            );
-            
-            // Remove food
-            this.gameState.food.splice(i, 1);
+          // Update player score
+          if (!player.isAI) {
+            player.score += Math.ceil(food.value);
+            player.recordFoodEaten();
           }
+          
+          // Create particle effect
+          this.particleSystem.createSplash(
+            food.position,
+            food.color,
+            { x: cell.position.x - food.position.x, y: cell.position.y - food.position.y },
+            5
+          );
+          
+          // Remove food
+          this.gameState.food.splice(i, 1);
         }
       }
-    });
-  }
+    }
+  });
+}
   
   private checkPlayerPlayerCollisions(): void {
     const players = Array.from(this.gameState.players.values());
@@ -883,78 +910,100 @@ export class Game {
     }
   }
   
-  private enforceWorldBounds(): void {
-    const worldWidth = this.gameState.worldSize.x;
-    const worldHeight = this.gameState.worldSize.y;
+ private enforceWorldBounds(): void {
+  const worldWidth = this.gameState.worldSize.x;
+  const worldHeight = this.gameState.worldSize.y;
+  
+  // Safety check for world dimensions
+  if (typeof worldWidth !== 'number' || typeof worldHeight !== 'number' ||
+      worldWidth <= 0 || worldHeight <= 0) {
+    console.error("Invalid world dimensions:", this.gameState.worldSize);
+    return;
+  }
+  
+  // For each player
+  this.gameState.players.forEach(player => {
+    // Skip if player has no cells
+    if (!player.cells || player.cells.length === 0) return;
     
-    // For each player
-    this.gameState.players.forEach(player => {
-      // For each cell of the player
-      for (const cell of player.cells) {
-        // Keep cell within world bounds
-        if (cell.position.x - cell.radius < 0) {
-          cell.position.x = cell.radius;
-          cell.velocity.x = Math.abs(cell.velocity.x) * 0.5; // Bounce
-        } else if (cell.position.x + cell.radius > worldWidth) {
-          cell.position.x = worldWidth - cell.radius;
-          cell.velocity.x = -Math.abs(cell.velocity.x) * 0.5; // Bounce
-        }
-        
-        if (cell.position.y - cell.radius < 0) {
-          cell.position.y = cell.radius;
-          cell.velocity.y = Math.abs(cell.velocity.y) * 0.5; // Bounce
-        } else if (cell.position.y + cell.radius > worldHeight) {
-          cell.position.y = worldHeight - cell.radius;
-          cell.velocity.y = -Math.abs(cell.velocity.y) * 0.5; // Bounce
-        }
-      }
-    });
-    
-    // Also enforce bounds for viruses
-    for (const virus of this.gameState.viruses) {
-      if (virus.position.x - virus.radius < 0) {
-        virus.position.x = virus.radius;
-      } else if (virus.position.x + virus.radius > worldWidth) {
-        virus.position.x = worldWidth - virus.radius;
+    // For each cell of the player
+    for (const cell of player.cells) {
+      // Skip if cell is invalid
+      if (!cell || !cell.position || typeof cell.radius !== 'number') continue;
+      
+      // Keep cell within world bounds
+      if (cell.position.x - cell.radius < 0) {
+        cell.position.x = cell.radius;
+        cell.velocity.x = Math.abs(cell.velocity.x) * 0.5; // Bounce
+      } else if (cell.position.x + cell.radius > worldWidth) {
+        cell.position.x = worldWidth - cell.radius;
+        cell.velocity.x = -Math.abs(cell.velocity.x) * 0.5; // Bounce
       }
       
-      if (virus.position.y - virus.radius < 0) {
-        virus.position.y = virus.radius;
-      } else if (virus.position.y + virus.radius > worldHeight) {
-        virus.position.y = worldHeight - virus.radius;
+      if (cell.position.y - cell.radius < 0) {
+        cell.position.y = cell.radius;
+        cell.velocity.y = Math.abs(cell.velocity.y) * 0.5; // Bounce
+      } else if (cell.position.y + cell.radius > worldHeight) {
+        cell.position.y = worldHeight - cell.radius;
+        cell.velocity.y = -Math.abs(cell.velocity.y) * 0.5; // Bounce
       }
     }
+  });
+  
+  // Also enforce bounds for viruses
+  for (const virus of this.gameState.viruses) {
+    // Skip if virus is invalid
+    if (!virus || !virus.position || typeof virus.radius !== 'number') continue;
     
-    // Enforce bounds for food
-    for (const food of this.gameState.food) {
-      if (food.position.x - food.radius < 0) {
-        food.position.x = food.radius;
-      } else if (food.position.x + food.radius > worldWidth) {
-        food.position.x = worldWidth - food.radius;
-      }
-      
-      if (food.position.y - food.radius < 0) {
-        food.position.y = food.radius;
-      } else if (food.position.y + food.radius > worldHeight) {
-        food.position.y = worldHeight - food.radius;
-      }
+    if (virus.position.x - virus.radius < 0) {
+      virus.position.x = virus.radius;
+    } else if (virus.position.x + virus.radius > worldWidth) {
+      virus.position.x = worldWidth - virus.radius;
     }
     
-    // Enforce bounds for power-ups
-    for (const powerUp of this.gameState.powerUps) {
-      if (powerUp.position.x - powerUp.radius < 0) {
-        powerUp.position.x = powerUp.radius;
-      } else if (powerUp.position.x + powerUp.radius > worldWidth) {
-        powerUp.position.x = worldWidth - powerUp.radius;
-      }
-      
-      if (powerUp.position.y - powerUp.radius < 0) {
-        powerUp.position.y = powerUp.radius;
-      } else if (powerUp.position.y + powerUp.radius > worldHeight) {
-        powerUp.position.y = worldHeight - powerUp.radius;
-      }
+    if (virus.position.y - virus.radius < 0) {
+      virus.position.y = virus.radius;
+    } else if (virus.position.y + virus.radius > worldHeight) {
+      virus.position.y = worldHeight - virus.radius;
     }
   }
+  
+  // Enforce bounds for food
+  for (const food of this.gameState.food) {
+    // Skip if food is invalid
+    if (!food || !food.position || typeof food.radius !== 'number') continue;
+    
+    if (food.position.x - food.radius < 0) {
+      food.position.x = food.radius;
+    } else if (food.position.x + food.radius > worldWidth) {
+      food.position.x = worldWidth - food.radius;
+    }
+    
+    if (food.position.y - food.radius < 0) {
+      food.position.y = food.radius;
+    } else if (food.position.y + food.radius > worldHeight) {
+      food.position.y = worldHeight - food.radius;
+    }
+  }
+  
+  // Enforce bounds for power-ups
+  for (const powerUp of this.gameState.powerUps) {
+    // Skip if powerUp is invalid
+    if (!powerUp || !powerUp.position || typeof powerUp.radius !== 'number') continue;
+    
+    if (powerUp.position.x - powerUp.radius < 0) {
+      powerUp.position.x = powerUp.radius;
+    } else if (powerUp.position.x + powerUp.radius > worldWidth) {
+      powerUp.position.x = worldWidth - powerUp.radius;
+    }
+    
+    if (powerUp.position.y - powerUp.radius < 0) {
+      powerUp.position.y = powerUp.radius;
+    } else if (powerUp.position.y + powerUp.radius > worldHeight) {
+      powerUp.position.y = worldHeight - powerUp.radius;
+    }
+  }
+}
   
   private updateLeaderboard(): void {
     // Convert players to array and sort by score

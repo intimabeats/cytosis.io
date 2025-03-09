@@ -24,48 +24,127 @@ export class PlayerCell extends BaseCell implements PlayerCell {
     this.owner = owner;
     this.canMerge = false;
     this.mergeTime = 10; // 10 seconds before cells can merge
+    
+    // Ensure membrane points are properly initialized
+    const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+    this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+    this.membraneTargetPoints = [...this.membranePoints];
   }
   
   update(deltaTime: number): void {
-    super.update(deltaTime);
+    // Safety check for membrane points before calling super.update
+    if (!this.membranePoints || !Array.isArray(this.membranePoints)) {
+      const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+      this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+    }
     
-    // Update merge timer
-    if (!this.canMerge && this.mergeTime > 0) {
-      this.mergeTime -= deltaTime;
-      if (this.mergeTime <= 0) {
-        this.canMerge = true;
-        this.mergeTime = 0;
+    if (!this.membraneTargetPoints || !Array.isArray(this.membraneTargetPoints)) {
+      this.membraneTargetPoints = [...this.membranePoints];
+    }
+    
+    try {
+      // Call parent update method
+      super.update(deltaTime);
+      
+      // Update merge timer
+      if (!this.canMerge && this.mergeTime > 0) {
+        this.mergeTime -= deltaTime;
+        if (this.mergeTime <= 0) {
+          this.canMerge = true;
+          this.mergeTime = 0;
+        }
+      }
+    } catch (error) {
+      console.error("Error in PlayerCell update:", error);
+      
+      // Attempt recovery
+      if (!this.membranePoints || !Array.isArray(this.membranePoints)) {
+        const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+        this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+      }
+      
+      if (!this.membraneTargetPoints || !Array.isArray(this.membraneTargetPoints)) {
+        this.membraneTargetPoints = [...this.membranePoints];
+      }
+      
+      // Apply basic updates without membrane
+      this.position.x += this.velocity.x * deltaTime;
+      this.position.y += this.velocity.y * deltaTime;
+      
+      // Apply friction
+      this.velocity.x *= (1 - 0.05 * deltaTime);
+      this.velocity.y *= (1 - 0.05 * deltaTime);
+      
+      // Update merge timer
+      if (!this.canMerge && this.mergeTime > 0) {
+        this.mergeTime -= deltaTime;
+        if (this.mergeTime <= 0) {
+          this.canMerge = true;
+          this.mergeTime = 0;
+        }
       }
     }
   }
   
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    super.render(ctx, camera);
-    
-    // If this cell can't merge yet, show a timer indicator
-    if (!this.canMerge && this.mergeTime > 0) {
-      const screenPos = camera.worldToScreen(this.position);
-      const screenRadius = this.radius * camera.scale;
+    try {
+      // Safety check for membrane points before rendering
+      if (!this.membranePoints || !Array.isArray(this.membranePoints)) {
+        const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+        this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+      }
       
-      // Draw merge timer as a circle outline
-      ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y, screenRadius * 1.1, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      if (!this.membraneTargetPoints || !Array.isArray(this.membraneTargetPoints)) {
+        this.membraneTargetPoints = [...this.membranePoints];
+      }
       
-      // Draw progress arc
-      const progress = this.mergeTime / 10; // Assuming 10 seconds merge time
-      ctx.beginPath();
-      ctx.arc(
-        screenPos.x, 
-        screenPos.y, 
-        screenRadius * 1.1, 
-        -Math.PI / 2, 
-        -Math.PI / 2 + (1 - progress) * Math.PI * 2
-      );
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.stroke();
+      // Call parent render method
+      super.render(ctx, camera);
+      
+      // If this cell can't merge yet, show a timer indicator
+      if (!this.canMerge && this.mergeTime > 0) {
+        const screenPos = camera.worldToScreen(this.position);
+        const screenRadius = this.radius * camera.scale;
+        
+        // Draw merge timer as a circle outline
+        ctx.beginPath();
+        ctx.arc(screenPos.x, screenPos.y, screenRadius * 1.1, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Draw progress arc
+        const progress = this.mergeTime / 10; // Assuming 10 seconds merge time
+        ctx.beginPath();
+        ctx.arc(
+          screenPos.x, 
+          screenPos.y, 
+          screenRadius * 1.1, 
+          -Math.PI / 2, 
+          -Math.PI / 2 + (1 - progress) * Math.PI * 2
+        );
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.stroke();
+      }
+    } catch (error) {
+      console.error("Error in PlayerCell render:", error);
+      
+      // Fallback rendering if membrane points fail
+      if (camera.isInView(this.position, this.radius)) {
+        const screenPos = camera.worldToScreen(this.position);
+        const screenRadius = this.radius * camera.scale;
+        
+        // Draw simple circle
+        ctx.beginPath();
+        ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        
+        // Draw outline
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
   }
 }
@@ -116,22 +195,43 @@ export class GamePlayer implements Player {
     this.addCell(position, startRadius);
   }
   
-  addCell(position: Vector2D, radius: number): PlayerCell | null {
-    // Validate position and radius
-    if (!position || typeof radius !== 'number' || radius <= 0) {
-      console.error("Invalid parameters for addCell:", position, radius);
-      return null;
+ addCell(position: Vector2D, radius: number): PlayerCell | null {
+  // Validate position and radius
+  if (!position || typeof radius !== 'number' || radius <= 0) {
+    console.error("Invalid parameters for addCell:", position, radius);
+    return null;
+  }
+  
+  // Check if we've reached the maximum number of cells
+  if (this.cells.length >= this.maxCells) {
+    return null;
+  }
+  
+  try {
+    const cell = new PlayerCell(
+      { x: position.x, y: position.y }, // Ensure we pass a new object
+      radius,
+      this.color,
+      this.id
+    );
+    
+    // Verify that the cell was created correctly
+    if (!cell.membranePoints || !Array.isArray(cell.membranePoints)) {
+      console.error("Cell created with invalid membrane points");
+      
+      // Fix membrane points
+      const numPoints = Math.max(10, Math.floor(radius * 0.8));
+      cell.membranePoints = generateMembranePoints(position, radius, numPoints);
+      cell.membraneTargetPoints = [...cell.membranePoints];
     }
     
-    // Check if we've reached the maximum number of cells
-    if (this.cells.length >= this.maxCells) {
-      return null;
-    }
-    
-    const cell = new PlayerCell(position, radius, this.color, this.id);
     this.cells.push(cell);
     return cell;
+  } catch (error) {
+    console.error("Error creating new cell:", error);
+    return null;
   }
+}
   
   update(deltaTime: number): void {
     // Safety check for deltaTime
@@ -438,25 +538,31 @@ export class GamePlayer implements Player {
     });
   }
   
-  setTargetDirection(target: Vector2D): void {
-    // Safety check for target
-    if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
-      return;
-    }
-    
-    // Calculate direction from average position to target
-    const avgPos = this.getAveragePosition();
-    let dir = subtract(target, avgPos);
-    
-    // Normalize direction
-    const mag = Math.sqrt(dir.x * dir.x + dir.y * dir.y);
-    if (mag > 0) {
-      dir.x /= mag;
-      dir.y /= mag;
-    }
-    
-    this.targetDirection = dir;
+setTargetDirection(target: Vector2D): void {
+  // Safety check for target
+  if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
+    return;
   }
+  
+  // Calculate direction from average position to target
+  const avgPos = this.getAveragePosition();
+  
+  // Safety check for avgPos
+  if (!avgPos || typeof avgPos.x !== 'number' || typeof avgPos.y !== 'number') {
+    return;
+  }
+  
+  let dir = subtract(target, avgPos);
+  
+  // Normalize direction
+  const mag = Math.sqrt(dir.x * dir.x + dir.y * dir.y);
+  if (mag > 0) {
+    dir.x /= mag;
+    dir.y /= mag;
+  }
+  
+  this.targetDirection = dir;
+}
   
   split(): void {
     // Cooldown check

@@ -179,8 +179,22 @@ export function generateMembranePoints(center: Vector2D, radius: number, points:
   // Safety check to prevent NaN errors
   if (!center || typeof center.x !== 'number' || typeof center.y !== 'number' || 
       typeof radius !== 'number' || typeof points !== 'number') {
-    return [];
+    console.warn("Invalid parameters in generateMembranePoints", { center, radius, points });
+    
+    // Return a default circle with 10 points
+    const result: Vector2D[] = [];
+    for (let i = 0; i < 10; i++) {
+      const angle = (i / 10) * Math.PI * 2;
+      result.push({ 
+        x: 0 + Math.cos(angle) * 10, 
+        y: 0 + Math.sin(angle) * 10 
+      });
+    }
+    return result;
   }
+  
+  // Ensure points is a reasonable number
+  points = Math.max(6, Math.min(points, 100));
   
   const result: Vector2D[] = [];
   for (let i = 0; i < points; i++) {
@@ -189,6 +203,23 @@ export function generateMembranePoints(center: Vector2D, radius: number, points:
     const y = center.y + Math.sin(angle) * radius;
     result.push({ x, y });
   }
+  
+  // Verify the result
+  if (!Array.isArray(result) || result.length === 0) {
+    console.warn("generateMembranePoints produced invalid result");
+    
+    // Return a default circle with 10 points
+    const fallback: Vector2D[] = [];
+    for (let i = 0; i < 10; i++) {
+      const angle = (i / 10) * Math.PI * 2;
+      fallback.push({ 
+        x: center.x + Math.cos(angle) * radius, 
+        y: center.y + Math.sin(angle) * radius 
+      });
+    }
+    return fallback;
+  }
+  
   return result;
 }
 
@@ -208,16 +239,23 @@ export function validatePosition(position: Vector2D, defaultPosition: Vector2D):
 }
 
 // Get a random position within bounds
-export function randomPosition(bounds: { width: number, height: number }): Vector2D {
-  // Safety check to prevent NaN errors
-  if (!bounds || typeof bounds.width !== 'number' || typeof bounds.height !== 'number') {
-    return { x: 0, y: 0 };
+export function randomPosition(bounds: { x: number, y: number } | { width: number, height: number }): Vector2D {
+  // Verificar se estamos recebendo o formato correto de limites
+  if ('width' in bounds && 'height' in bounds) {
+    return {
+      x: Math.random() * bounds.width,
+      y: Math.random() * bounds.height
+    };
+  } else if ('x' in bounds && 'y' in bounds) {
+    return {
+      x: Math.random() * bounds.x,
+      y: Math.random() * bounds.y
+    };
   }
   
-  return {
-    x: Math.random() * bounds.width,
-    y: Math.random() * bounds.height
-  };
+  // Fallback para evitar erros
+  console.warn('Invalid bounds in randomPosition', bounds);
+  return { x: 100, y: 100 };
 }
 
 // Get a random velocity with maximum speed

@@ -1,4 +1,4 @@
-// src/camera.ts - Updated for more responsive following
+// src/camera.ts - Versão melhorada para seguimento mais responsivo
 import { Camera, Vector2D } from './types';
 import { lerp } from './utils';
 
@@ -20,56 +20,61 @@ export class GameCamera implements Camera {
     this.targetScale = 1;
     this.width = width;
     this.height = height;
-    this.minScale = 0.1;  // Minimum zoom level
-    this.maxScale = 2.0;  // Maximum zoom level
-    // IMPROVED: Much faster camera response for better gameplay
-    this.smoothFactor = 0.5; // Increased from 0.2 to 0.5 for near-instant camera movement
+    this.minScale = 0.1;  // Nível mínimo de zoom
+    this.maxScale = 2.0;  // Nível máximo de zoom
+    // MELHORIA: Fator de suavização muito mais alto para movimento quase instantâneo da câmera
+    this.smoothFactor = 0.8; // Aumentado de 0.5 para 0.8 para movimento quase instantâneo
   }
 
   update(deltaTime: number): void {
-    // Safety check for deltaTime
+    // Verificação de segurança para deltaTime
     if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
-      deltaTime = 0.016; // Default to 60fps
+      deltaTime = 0.016; // Padrão para 60fps
     }
     
-    // IMPROVED: Much faster camera movement with higher lerp factor
-    // Adjust lerp factor based on deltaTime for consistent smoothness
+    // MELHORIA: Movimento de câmera muito mais rápido com fator de lerp mais alto
+    // Ajustar fator de lerp com base em deltaTime para suavidade consistente
     const lerpFactor = 1 - Math.pow(1 - this.smoothFactor, deltaTime * 60);
     
-    this.position.x = lerp(this.position.x, this.targetPosition.x, lerpFactor);
-    this.position.y = lerp(this.position.y, this.targetPosition.y, lerpFactor);
+    // MELHORIA: Usar um fator de lerp ainda mais alto para a posição para seguimento quase instantâneo
+    const positionLerpFactor = Math.min(0.95, lerpFactor * 1.5); // Mais rápido para posição
+    
+    this.position.x = lerp(this.position.x, this.targetPosition.x, positionLerpFactor);
+    this.position.y = lerp(this.position.y, this.targetPosition.y, positionLerpFactor);
     this.scale = lerp(this.scale, this.targetScale, lerpFactor);
     
-    // Validate position to prevent NaN
+    // Validar posição para evitar NaN
     if (isNaN(this.position.x) || isNaN(this.position.y)) {
-      console.error("Camera position is NaN, resetting");
+      console.error("Posição da câmera é NaN, redefinindo");
       this.position = { ...this.targetPosition };
     }
     
     if (isNaN(this.scale)) {
-      console.error("Camera scale is NaN, resetting");
+      console.error("Escala da câmera é NaN, redefinindo");
       this.scale = this.targetScale;
     }
     
-    // Clamp scale to min/max values
+    // Limitar escala aos valores mín/máx
     this.scale = Math.max(this.minScale, Math.min(this.maxScale, this.scale));
   }
 
   follow(target: Vector2D, playerRadius: number): void {
-    // Safety check for target
+    // Verificação de segurança para o alvo
     if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
       return;
     }
     
+    // MELHORIA: Usar posição alvo diretamente para seguimento mais responsivo
     this.targetPosition = { ...target };
     
-    // Scale based on player size (zoom out as player gets bigger)
-    // Adjusted formula for better visibility
+    // Escala baseada no tamanho do jogador (afastar à medida que o jogador fica maior)
+    // Fórmula ajustada para melhor visibilidade
     const baseScale = 1;
-    const scaleFactor = Math.max(0.3, 40 / (playerRadius + 40));
+    // MELHORIA: Ajuste de escala mais suave para melhor visibilidade
+    const scaleFactor = Math.max(0.4, 50 / (playerRadius + 50));
     this.targetScale = baseScale * scaleFactor;
     
-    // Clamp target scale to min/max values
+    // Limitar escala alvo aos valores mín/máx
     this.targetScale = Math.max(this.minScale, Math.min(this.maxScale, this.targetScale));
   }
 
@@ -79,7 +84,7 @@ export class GameCamera implements Camera {
   }
 
   worldToScreen(worldPos: Vector2D): Vector2D {
-    // Safety check for worldPos
+    // Verificação de segurança para worldPos
     if (!worldPos || typeof worldPos.x !== 'number' || typeof worldPos.y !== 'number') {
       return { x: 0, y: 0 };
     }
@@ -91,7 +96,7 @@ export class GameCamera implements Camera {
   }
 
   screenToWorld(screenPos: Vector2D): Vector2D {
-    // Safety check for screenPos
+    // Verificação de segurança para screenPos
     if (!screenPos || typeof screenPos.x !== 'number' || typeof screenPos.y !== 'number') {
       return { x: 0, y: 0 };
     }
@@ -103,7 +108,7 @@ export class GameCamera implements Camera {
   }
 
   isInView(worldPos: Vector2D, radius: number): boolean {
-    // Safety check for worldPos and radius
+    // Verificação de segurança para worldPos e radius
     if (!worldPos || typeof worldPos.x !== 'number' || typeof worldPos.y !== 'number' || 
         typeof radius !== 'number') {
       return false;
@@ -112,7 +117,7 @@ export class GameCamera implements Camera {
     const screenPos = this.worldToScreen(worldPos);
     const scaledRadius = radius * this.scale;
     
-    // Add a margin to prevent pop-in/pop-out at screen edges
+    // Adicionar uma margem para evitar pop-in/pop-out nas bordas da tela
     const margin = 100;
     
     return (

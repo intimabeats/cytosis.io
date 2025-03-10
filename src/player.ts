@@ -1,4 +1,4 @@
-// src/player.ts - Complete rewrite for better gameplay
+// src/player.ts - Parte 1: Atualização para movimento contínuo e exibição de nome por célula
 import { Player, PlayerCell, Vector2D, PowerUpType, Camera } from './types';
 import { BaseCell } from './cell';
 import { 
@@ -19,21 +19,23 @@ export class PlayerCell extends BaseCell implements PlayerCell {
   owner: string;
   canMerge: boolean;
   mergeTime: number;
+  playerName: string; // NOVO: Armazenar o nome do jogador para exibição
   
-  constructor(position: Vector2D, radius: number, color: string, owner: string) {
+  constructor(position: Vector2D, radius: number, color: string, owner: string, playerName: string) {
     super(position, radius, color);
     this.owner = owner;
     this.canMerge = false;
-    this.mergeTime = 10; // 10 seconds before cells can merge
+    this.mergeTime = 10; // 10 segundos antes que as células possam se fundir
+    this.playerName = playerName; // NOVO: Armazenar o nome do jogador
     
-    // Ensure membrane points are properly initialized
+    // Garantir que os pontos da membrana sejam inicializados corretamente
     const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
     this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
     this.membraneTargetPoints = [...this.membranePoints];
   }
   
   update(deltaTime: number): void {
-    // Safety check for membrane points before calling super.update
+    // Verificação de segurança para pontos de membrana antes de chamar super.update
     if (!this.membranePoints || !Array.isArray(this.membranePoints)) {
       const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
       this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
@@ -44,10 +46,10 @@ export class PlayerCell extends BaseCell implements PlayerCell {
     }
     
     try {
-      // Call parent update method
+      // Chamar método de atualização pai
       super.update(deltaTime);
       
-      // Update merge timer
+      // Atualizar temporizador de fusão
       if (!this.canMerge && this.mergeTime > 0) {
         this.mergeTime -= deltaTime;
         if (this.mergeTime <= 0) {
@@ -56,9 +58,9 @@ export class PlayerCell extends BaseCell implements PlayerCell {
         }
       }
     } catch (error) {
-      console.error("Error in PlayerCell update:", error);
+      console.error("Erro na atualização da PlayerCell:", error);
       
-      // Attempt recovery
+      // Tentativa de recuperação
       if (!this.membranePoints || !Array.isArray(this.membranePoints)) {
         const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
         this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
@@ -68,15 +70,15 @@ export class PlayerCell extends BaseCell implements PlayerCell {
         this.membraneTargetPoints = [...this.membranePoints];
       }
       
-      // Apply basic updates without membrane
+      // Aplicar atualizações básicas sem membrana
       this.position.x += this.velocity.x * deltaTime;
       this.position.y += this.velocity.y * deltaTime;
       
-      // Apply friction
+      // Aplicar fricção
       this.velocity.x *= (1 - 0.05 * deltaTime);
       this.velocity.y *= (1 - 0.05 * deltaTime);
       
-      // Update merge timer
+      // Atualizar temporizador de fusão
       if (!this.canMerge && this.mergeTime > 0) {
         this.mergeTime -= deltaTime;
         if (this.mergeTime <= 0) {
@@ -89,7 +91,7 @@ export class PlayerCell extends BaseCell implements PlayerCell {
   
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
     try {
-      // Safety check for membrane points before rendering
+      // Verificação de segurança para pontos de membrana antes de renderizar
       if (!this.membranePoints || !Array.isArray(this.membranePoints)) {
         const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
         this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
@@ -99,23 +101,34 @@ export class PlayerCell extends BaseCell implements PlayerCell {
         this.membraneTargetPoints = [...this.membranePoints];
       }
       
-      // Call parent render method
+      // Chamar método de renderização pai
       super.render(ctx, camera);
       
-      // If this cell can't merge yet, show a timer indicator
+      // NOVO: Renderizar nome do jogador acima de cada célula individual
+      const screenPos = camera.worldToScreen(this.position);
+      const screenRadius = this.radius * camera.scale;
+      
+      // Ajustar tamanho da fonte com base no tamanho da célula
+      const fontSize = Math.max(10, Math.min(16, screenRadius * 0.3));
+      ctx.font = `bold ${fontSize}px Rajdhani`;
+      ctx.fillStyle = 'white';
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 2;
+      ctx.textAlign = 'center';
+      ctx.strokeText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
+      ctx.fillText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
+      
+      // Se esta célula ainda não puder se fundir, mostrar um indicador de temporizador
       if (!this.canMerge && this.mergeTime > 0) {
-        const screenPos = camera.worldToScreen(this.position);
-        const screenRadius = this.radius * camera.scale;
-        
-        // Draw merge timer as a circle outline
+        // Desenhar temporizador de fusão como um contorno de círculo
         ctx.beginPath();
         ctx.arc(screenPos.x, screenPos.y, screenRadius * 1.1, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = 2;
         ctx.stroke();
         
-        // Draw progress arc
-        const progress = this.mergeTime / 10; // Assuming 10 seconds merge time
+        // Desenhar arco de progresso
+        const progress = this.mergeTime / 10; // Assumindo 10 segundos de tempo de fusão
         ctx.beginPath();
         ctx.arc(
           screenPos.x, 
@@ -128,23 +141,33 @@ export class PlayerCell extends BaseCell implements PlayerCell {
         ctx.stroke();
       }
     } catch (error) {
-      console.error("Error in PlayerCell render:", error);
+      console.error("Erro na renderização da PlayerCell:", error);
       
-      // Fallback rendering if membrane points fail
+      // Renderização de fallback se os pontos de membrana falharem
       if (camera.isInView(this.position, this.radius)) {
         const screenPos = camera.worldToScreen(this.position);
         const screenRadius = this.radius * camera.scale;
         
-        // Draw simple circle
+        // Desenhar círculo simples
         ctx.beginPath();
         ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
         ctx.fill();
         
-        // Draw outline
+        // Desenhar contorno
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.lineWidth = 2;
         ctx.stroke();
+        
+        // Ainda renderizar o nome
+        const fontSize = Math.max(10, Math.min(16, screenRadius * 0.3));
+        ctx.font = `bold ${fontSize}px Rajdhani`;
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 2;
+        ctx.textAlign = 'center';
+        ctx.strokeText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
+        ctx.fillText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
       }
     }
   }
@@ -159,7 +182,7 @@ export class GamePlayer implements Player {
   isAI: boolean;
   activeEffects: Map<PowerUpType, number>;
   targetDirection: Vector2D;
-  mousePosition: Vector2D; // Added to track actual mouse position
+  mousePosition: Vector2D;
   lastSplitTime: number;
   lastEjectTime: number;
   maxCells: number;
@@ -171,6 +194,14 @@ export class GamePlayer implements Player {
   totalVirusHit: number;
   totalPowerUpsCollected: number;
   
+  // MELHORIA: Adicionado para controle de aceleração
+  acceleration: Vector2D;
+  maxSpeed: number;
+  
+  // NOVO: Variáveis para movimento contínuo e fusão automática
+  isMouseInCenter: boolean;
+  shouldMoveToCenter: boolean;
+  
   constructor(name: string, position: Vector2D, isAI: boolean = false, startRadius: number = 30, color: string = '') {
     this.id = generateId();
     this.name = name;
@@ -180,49 +211,58 @@ export class GamePlayer implements Player {
     this.isAI = isAI;
     this.activeEffects = new Map();
     this.targetDirection = { x: 0, y: 0 };
-    this.mousePosition = { x: 0, y: 0 }; // Initialize mouse position
+    this.mousePosition = { x: 0, y: 0 };
     this.lastSplitTime = 0;
     this.lastEjectTime = 0;
-    this.maxCells = 16; // Maximum number of cells a player can have
-    this.minSplitMass = 35; // Minimum mass required to split (corresponds to radius ~40)
-    this.minEjectMass = 35; // Minimum mass required to eject
+    this.maxCells = 16;
+    this.minSplitMass = 35;
+    this.minEjectMass = 35;
     
-    // Stats tracking
+    // MELHORIA: Inicializar aceleração e velocidade máxima
+    this.acceleration = { x: 0, y: 0 };
+    this.maxSpeed = 800;
+    
+    // NOVO: Inicializar variáveis para movimento contínuo e fusão automática
+    this.isMouseInCenter = false;
+    this.shouldMoveToCenter = false;
+    
+    // Rastreamento de estatísticas
     this.highestScore = 0;
     this.totalFoodEaten = 0;
     this.totalPlayersEaten = 0;
     this.totalVirusHit = 0;
     this.totalPowerUpsCollected = 0;
     
-    // Create initial cell
+    // Criar célula inicial
     this.addCell(position, startRadius);
   }
-  
   addCell(position: Vector2D, radius: number): PlayerCell | null {
-    // Validate position and radius
+    // Validar posição e raio
     if (!position || typeof radius !== 'number' || radius <= 0) {
-      console.error("Invalid parameters for addCell:", position, radius);
+      console.error("Parâmetros inválidos para addCell:", position, radius);
       return null;
     }
     
-    // Check if we've reached the maximum number of cells
+    // Verificar se atingimos o número máximo de células
     if (this.cells.length >= this.maxCells) {
       return null;
     }
     
     try {
+      // MODIFICADO: Passar o nome do jogador para a célula
       const cell = new PlayerCell(
-        { x: position.x, y: position.y }, // Ensure we pass a new object
+        { x: position.x, y: position.y },
         radius,
         this.color,
-        this.id
+        this.id,
+        this.name // Passar o nome do jogador para a célula
       );
       
-      // Verify that the cell was created correctly
+      // Verificar se a célula foi criada corretamente
       if (!cell.membranePoints || !Array.isArray(cell.membranePoints)) {
-        console.error("Cell created with invalid membrane points");
+        console.error("Célula criada com pontos de membrana inválidos");
         
-        // Fix membrane points
+        // Corrigir pontos de membrana
         const numPoints = Math.max(10, Math.floor(radius * 0.8));
         cell.membranePoints = generateMembranePoints(position, radius, numPoints);
         cell.membraneTargetPoints = [...cell.membranePoints];
@@ -231,96 +271,134 @@ export class GamePlayer implements Player {
       this.cells.push(cell);
       return cell;
     } catch (error) {
-      console.error("Error creating new cell:", error);
+      console.error("Erro ao criar nova célula:", error);
       return null;
     }
   }
   
-  update(deltaTime: number): void {
-    // Safety check for deltaTime
-    if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
-      deltaTime = 0.016; // Default to 60fps
-    }
+update(deltaTime: number): void {
+  // Verificação de segurança para deltaTime
+  if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
+    deltaTime = 0.016; // Padrão para 60fps
+  }
+  
+  // CORREÇÃO: Verificar se o mouse está no centro para fusão automática
+  if (this.isMouseInCenter && this.cells.length > 1) {
+    this.shouldMoveToCenter = true;
+  } else {
+    this.shouldMoveToCenter = false;
+  }
+  
+  // Atualizar todas as células
+  for (let i = this.cells.length - 1; i >= 0; i--) {
+    const cell = this.cells[i];
     
-    // Update all cells
-    for (let i = this.cells.length - 1; i >= 0; i--) {
-      const cell = this.cells[i];
+    try {
+      cell.update(deltaTime);
       
-      try {
-        cell.update(deltaTime);
+      // CORREÇÃO: Garantir que o movimento seja aplicado sempre
+      if (!this.isAI) {
+        let targetPos: Vector2D;
+        let direction: Vector2D;
         
-        // IMPROVED: Each cell moves directly toward mouse position instead of using target direction
-        if (!this.isAI) {
-          // For human player, each cell moves directly toward mouse position
-          const cellToMouse = subtract(this.mousePosition, cell.position);
-          const direction = normalize(cellToMouse);
-          
-          // Apply speed boost if active
+        if (this.shouldMoveToCenter) {
+          // Se o mouse está no centro e temos múltiplas células, mover em direção ao centro
+          const avgPos = this.getAveragePosition();
+          targetPos = avgPos;
+          direction = subtract(targetPos, cell.position);
+        } else {
+          // Caso contrário, mover em direção ao mouse
+          targetPos = this.mousePosition;
+          direction = subtract(targetPos, cell.position);
+        }
+        
+        // Normalizar direção
+        const dirMag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+        if (dirMag > 0) {
+          direction.x /= dirMag;
+          direction.y /= dirMag;
+        } else {
+          // Se não houver direção (estamos exatamente no alvo), não aplicar força
+          continue;
+        }
+        
+        // CORREÇÃO: Sempre aplicar uma força mínima para garantir movimento contínuo
+        let speedMultiplier = 1;
+        if (this.hasEffect(PowerUpType.SPEED)) {
+          speedMultiplier = 2.0;
+        }
+        
+        // Células menores se movem mais rápido
+        const sizeMultiplier = Math.max(0.7, 1.5 - (cell.radius / 100));
+        
+        // CORREÇÃO: Força para movimento contínuo - garantir que seja sempre aplicada
+        const forceMagnitude = 500000 * deltaTime * speedMultiplier * sizeMultiplier;
+        
+        const force = {
+          x: direction.x * forceMagnitude,
+          y: direction.y * forceMagnitude
+        };
+        
+        cell.applyForce(force);
+        
+        // Adicionar um pequeno impulso extra para células que estão muito longe
+        const distanceToTarget = distance(cell.position, targetPos);
+        if (distanceToTarget > 200) {
+          const boostMultiplier = Math.min(3.0, distanceToTarget / 100);
+          const boostForce = {
+            x: direction.x * forceMagnitude * boostMultiplier * 0.5,
+            y: direction.y * forceMagnitude * boostMultiplier * 0.5
+          };
+          cell.applyForce(boostForce);
+        }
+      } else {
+        // CORREÇÃO: Garantir que os bots também se movam
+        if (this.targetDirection.x !== 0 || this.targetDirection.y !== 0) {
+          // Aplicar impulso de velocidade se ativo
           let speedMultiplier = 1;
           if (this.hasEffect(PowerUpType.SPEED)) {
             speedMultiplier = 1.5;
           }
           
-          // Smaller cells move faster
+          // Células menores se movem mais rápido
           const sizeMultiplier = Math.max(0.5, 1 - (cell.radius / 200));
           
-          // EXTREME force for near-instantaneous movement
-          const forceMagnitude = 200000 * deltaTime * speedMultiplier * sizeMultiplier;
+          // CORREÇÃO: Aumentar a força para garantir movimento
+          const forceMagnitude = 300000 * deltaTime * speedMultiplier * sizeMultiplier;
           
           const force = {
-            x: direction.x * forceMagnitude,
-            y: direction.y * forceMagnitude
+            x: this.targetDirection.x * forceMagnitude,
+            y: this.targetDirection.y * forceMagnitude
           };
           
           cell.applyForce(force);
-        } else {
-          // AI players still use target direction
-          if (this.targetDirection.x !== 0 || this.targetDirection.y !== 0) {
-            // Apply speed boost if active
-            let speedMultiplier = 1;
-            if (this.hasEffect(PowerUpType.SPEED)) {
-              speedMultiplier = 1.5;
-            }
-            
-            // Smaller cells move faster
-            const sizeMultiplier = Math.max(0.5, 1 - (cell.radius / 200));
-            
-            // EXTREME force for near-instantaneous movement
-            const forceMagnitude = 200000 * deltaTime * speedMultiplier * sizeMultiplier;
-            
-            const force = {
-              x: this.targetDirection.x * forceMagnitude,
-              y: this.targetDirection.y * forceMagnitude
-            };
-            
-            cell.applyForce(force);
-          }
         }
-      } catch (error) {
-        console.error("Error updating cell:", error);
-        // Remove problematic cell
-        this.cells.splice(i, 1);
       }
+    } catch (error) {
+      console.error("Erro ao atualizar célula:", error);
+      // Remover célula problemática
+      this.cells.splice(i, 1);
     }
+  }
     
-    // Check for cell merging
+    // Verificar fusão de células
     this.handleCellMerging();
     
-    // Update power-up effects
+    // Atualizar efeitos de power-up
     this.updatePowerUps(deltaTime);
     
-    // Update score based on total mass
+    // Atualizar pontuação com base na massa total
     const newScore = Math.floor(this.getTotalMass());
     if (newScore > this.score) {
       this.score = newScore;
       
-      // Update highest score
+      // Atualizar pontuação mais alta
       if (this.score > this.highestScore) {
         this.highestScore = this.score;
       }
     }
     
-    // Update UI if this is the human player
+    // Atualizar UI se este for o jogador humano
     if (!this.isAI) {
       this.updateUI();
     }
@@ -333,45 +411,45 @@ export class GamePlayer implements Player {
     if (scoreElement) scoreElement.textContent = this.score.toString();
     if (sizeElement) sizeElement.textContent = this.cells.length.toString();
     
-    // Update power-up indicators
+    // Atualizar indicadores de power-up
     this.updatePowerUpIndicators();
   }
   
   updatePowerUpIndicators(): void {
-    // Remove existing indicators
+    // Remover indicadores existentes
     const statsElement = document.getElementById('stats');
     if (!statsElement) return;
     
-    // Remove existing power-up indicators
+    // Remover indicadores de power-up existentes
     const existingIndicators = statsElement.querySelectorAll('.power-up-indicator');
     existingIndicators.forEach(el => el.remove());
     
-    // Add current power-up indicators
+    // Adicionar indicadores de power-up atuais
     this.activeEffects.forEach((timeLeft, type) => {
       const indicator = document.createElement('div');
       indicator.className = 'power-up-indicator';
       
-      // Set color based on power-up type
+      // Definir cor com base no tipo de power-up
       switch (type) {
         case PowerUpType.SPEED:
-          indicator.style.backgroundColor = '#00ffff'; // Cyan
-          indicator.title = `Speed Boost: ${timeLeft.toFixed(1)}s`;
+          indicator.style.backgroundColor = '#00ffff'; // Ciano
+          indicator.title = `Impulso de Velocidade: ${timeLeft.toFixed(1)}s`;
           break;
         case PowerUpType.SHIELD:
-          indicator.style.backgroundColor = '#ffff00'; // Yellow
-          indicator.title = `Shield: ${timeLeft.toFixed(1)}s`;
+          indicator.style.backgroundColor = '#ffff00'; // Amarelo
+          indicator.title = `Escudo: ${timeLeft.toFixed(1)}s`;
           break;
         case PowerUpType.MASS_BOOST:
           indicator.style.backgroundColor = '#ff00ff'; // Magenta
-          indicator.title = `Mass Boost: ${timeLeft.toFixed(1)}s`;
+          indicator.title = `Impulso de Massa: ${timeLeft.toFixed(1)}s`;
           break;
         case PowerUpType.INVISIBILITY:
-          indicator.style.backgroundColor = '#888888'; // Gray
-          indicator.title = `Invisibility: ${timeLeft.toFixed(1)}s`;
+          indicator.style.backgroundColor = '#888888'; // Cinza
+          indicator.title = `Invisibilidade: ${timeLeft.toFixed(1)}s`;
           break;
       }
       
-      // Add timer text
+      // Adicionar texto do temporizador
       const timerText = document.createElement('span');
       timerText.textContent = timeLeft.toFixed(1);
       timerText.style.fontSize = '10px';
@@ -381,98 +459,117 @@ export class GamePlayer implements Player {
       timerText.style.transform = 'translate(-50%, -50%)';
       indicator.appendChild(timerText);
       
-      // Add to stats
+      // Adicionar às estatísticas
       statsElement.appendChild(indicator);
     });
   }
+  
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // Check if player is invisible (except for human player)
+    // Verificar se o jogador está invisível (exceto para o jogador humano)
     if (this.hasEffect(PowerUpType.INVISIBILITY) && this.isAI) {
       return;
     }
     
-    // Render all cells
+    // MODIFICADO: Renderizar apenas as células individuais, sem círculo central
     for (const cell of this.cells) {
       try {
         cell.render(ctx, camera);
       } catch (error) {
-        console.error("Error rendering cell:", error);
+        console.error("Erro ao renderizar célula:", error);
       }
     }
     
-    // Only render name and effects if player has cells
+    // Só renderizar efeitos se o jogador tiver células
     if (this.cells.length === 0) return;
     
-    // Get average position for name and effects
+    // Obter posição média para efeitos
     const avgPos = this.getAveragePosition();
     const screenPos = camera.worldToScreen(avgPos);
     
-    // Render player name above the cells
-    ctx.font = 'bold 16px Rajdhani';
-    ctx.fillStyle = 'white';
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 3;
-    ctx.textAlign = 'center';
-    ctx.strokeText(this.name, screenPos.x, screenPos.y - this.getMaxRadius() * camera.scale - 10);
-    ctx.fillText(this.name, screenPos.x, screenPos.y - this.getMaxRadius() * camera.scale - 10);
-
-    // Render active effects
+    // Renderizar efeitos ativos
     let effectOffset = 20;
     this.activeEffects.forEach((timeLeft, type) => {
       const effectName = PowerUpType[type];
+      
+      // MODIFICADO: Renderizar efeitos acima da célula maior
+      const maxRadiusCell = this.cells.reduce((max, cell) => 
+        cell.radius > max.radius ? cell : max, this.cells[0]);
+      
+      const maxCellScreenPos = camera.worldToScreen(maxRadiusCell.position);
+      const maxScreenRadius = maxRadiusCell.radius * camera.scale;
+      
       ctx.strokeText(
         `${effectName}: ${timeLeft.toFixed(1)}s`,
-        screenPos.x,
-        screenPos.y - this.getMaxRadius() * camera.scale - effectOffset
+        maxCellScreenPos.x,
+        maxCellScreenPos.y - maxScreenRadius - effectOffset
       );
       ctx.fillText(
         `${effectName}: ${timeLeft.toFixed(1)}s`,
-        screenPos.x,
-        screenPos.y - this.getMaxRadius() * camera.scale - effectOffset
+        maxCellScreenPos.x,
+        maxCellScreenPos.y - maxScreenRadius - effectOffset
       );
       effectOffset += 20;
     });
     
-    // Render shield if active
+    // Renderizar escudo se ativo
     if (this.hasEffect(PowerUpType.SHIELD)) {
-      const shieldRadius = this.getMaxRadius() * 1.2;
-      const screenShieldRadius = shieldRadius * camera.scale;
-      
-      ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y, screenShieldRadius, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
-      ctx.lineWidth = 5;
-      ctx.stroke();
-      
-      // Add pulsing effect to shield
-      const pulseRadius = screenShieldRadius * (1 + Math.sin(Date.now() / 200) * 0.05);
-      ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
+      // MODIFICADO: Renderizar escudo em cada célula individual
+      for (const cell of this.cells) {
+        const cellPos = camera.worldToScreen(cell.position);
+        const shieldRadius = cell.radius * 1.2;
+        const screenShieldRadius = shieldRadius * camera.scale;
+        
+        ctx.beginPath();
+        ctx.arc(cellPos.x, cellPos.y, screenShieldRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+        ctx.lineWidth = 5;
+        ctx.stroke();
+        
+        // Adicionar efeito pulsante ao escudo
+        const pulseRadius = screenShieldRadius * (1 + Math.sin(Date.now() / 200) * 0.05);
+        ctx.beginPath();
+        ctx.arc(cellPos.x, cellPos.y, pulseRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
     }
     
-    // Render speed boost effect if active
+    // Renderizar efeito de impulso de velocidade se ativo
     if (this.hasEffect(PowerUpType.SPEED)) {
-      // Draw speed lines behind the player
-      const trailLength = this.getMaxRadius() * 2;
-      const trailWidth = this.getMaxRadius() * 0.5;
-      
-      ctx.beginPath();
-      ctx.moveTo(
-        screenPos.x - this.targetDirection.x * trailLength * camera.scale,
-        screenPos.y - this.targetDirection.y * trailLength * camera.scale
-      );
-      ctx.lineTo(screenPos.x, screenPos.y);
-      ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
-      ctx.lineWidth = trailWidth * camera.scale;
-      ctx.stroke();
+      // MODIFICADO: Renderizar efeito de velocidade em cada célula individual
+      for (const cell of this.cells) {
+        const cellPos = camera.worldToScreen(cell.position);
+        const cellRadius = cell.radius * camera.scale;
+        
+        // Calcular direção de movimento para esta célula
+        let direction;
+        if (this.shouldMoveToCenter) {
+          const avgPos = this.getAveragePosition();
+          direction = normalize(subtract(avgPos, cell.position));
+        } else {
+          direction = normalize(subtract(this.mousePosition, cell.position));
+        }
+        
+        // Desenhar linhas de velocidade atrás da célula
+        const trailLength = cell.radius * 2;
+        const trailWidth = cell.radius * 0.5;
+        
+        ctx.beginPath();
+        ctx.moveTo(
+          cellPos.x - direction.x * trailLength * camera.scale,
+          cellPos.y - direction.y * trailLength * camera.scale
+        );
+        ctx.lineTo(cellPos.x, cellPos.y);
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+        ctx.lineWidth = trailWidth * camera.scale;
+        ctx.stroke();
+      }
     }
     
-    // Render invisibility effect if active
+    // Renderizar efeito de invisibilidade se ativo
     if (this.hasEffect(PowerUpType.INVISIBILITY) && !this.isAI) {
-      // Draw a faint outline for the human player to see their own cells
+      // Desenhar um contorno fraco para o jogador humano ver suas próprias células
       for (const cell of this.cells) {
         const cellPos = camera.worldToScreen(cell.position);
         const cellRadius = cell.radius * camera.scale;
@@ -485,22 +582,26 @@ export class GamePlayer implements Player {
       }
     }
     
-    // Render mass indicator for human player
+    // MODIFICADO: Renderizar indicador de massa em cada célula individual
     if (!this.isAI) {
-      const totalMass = Math.floor(this.getTotalMass());
-      ctx.font = '12px Rajdhani';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      ctx.textAlign = 'center';
-      ctx.fillText(
-        `${totalMass}`,
-        screenPos.x,
-        screenPos.y + 5
-      );
+      for (const cell of this.cells) {
+        const cellPos = camera.worldToScreen(cell.position);
+        const cellMass = Math.floor(cell.mass);
+        
+        ctx.font = '12px Rajdhani';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+          `${cellMass}`,
+          cellPos.x,
+          cellPos.y + 5
+        );
+      }
     }
   }
 
   private handleCellMerging(): void {
-    // Check for cells that can merge
+    // Verificar células que podem se fundir
     for (let i = 0; i < this.cells.length; i++) {
       const cellA = this.cells[i];
       
@@ -512,45 +613,44 @@ export class GamePlayer implements Player {
         if (!cellB.canMerge) continue;
         
         try {
-          // Check if cells are close enough to merge
+          // Verificar se as células estão próximas o suficiente para se fundir
           const dist = distance(cellA.position, cellB.position);
           if (dist < cellA.radius + cellB.radius - Math.min(cellA.radius, cellB.radius) * 0.5) {
-            // Merge cells
+            // Fundir células
             const totalMass = cellA.mass + cellB.mass;
             const newRadius = radiusFromMass(totalMass);
             
-            // Position is weighted average based on mass
+            // A posição é a média ponderada com base na massa
             const newPosition = {
               x: (cellA.position.x * cellA.mass + cellB.position.x * cellB.mass) / totalMass,
               y: (cellA.position.y * cellA.mass + cellB.position.y * cellB.mass) / totalMass
             };
             
-            // Update the first cell
+            // Atualizar a primeira célula
             cellA.position = newPosition;
             cellA.radius = newRadius;
             cellA.mass = totalMass;
             
-            // Remove the second cell
+            // Remover a segunda célula
             this.cells.splice(j, 1);
             
-            // Create merge effect
+            // Criar efeito de fusão
             this.createMergeEffect(cellA.position, cellB.position, this.color);
             
-            // Restart the loop since we modified the array
+            // Reiniciar o loop já que modificamos o array
             i = -1;
             break;
           }
         } catch (error) {
-          console.error("Error in cell merging:", error);
-          // Skip this pair of cells
+          console.error("Erro na fusão de células:", error);
+          // Pular este par de células
           continue;
         }
       }
     }
   }
-  
   private createMergeEffect(pos1: Vector2D, pos2: Vector2D, color: string): void {
-    // Dispatch event for particle effect
+    // Despachar evento para efeito de partícula
     const mergeEvent = new CustomEvent('cells-merged', {
       detail: {
         position1: pos1,
@@ -562,22 +662,22 @@ export class GamePlayer implements Player {
   }
   
   private updatePowerUps(deltaTime: number): void {
-    // Update active effects timers
+    // Atualizar temporizadores de efeitos ativos
     this.activeEffects.forEach((timeLeft, type) => {
       const newTime = timeLeft - deltaTime;
       if (newTime <= 0) {
         this.activeEffects.delete(type);
         
-        // Handle effect expiration
+        // Lidar com expiração de efeito
         if (type === PowerUpType.MASS_BOOST) {
-          // Reduce mass when mass boost expires
+          // Reduzir massa quando o impulso de massa expira
           for (const cell of this.cells) {
             cell.mass /= 1.5;
             cell.radius = radiusFromMass(cell.mass);
           }
         }
         
-        // Create effect expiration event
+        // Criar evento de expiração de efeito
         const expirationEvent = new CustomEvent('power-up-expired', {
           detail: {
             player: this,
@@ -592,29 +692,29 @@ export class GamePlayer implements Player {
   }
   
   setTargetDirection(target: Vector2D): void {
-    // Safety check for target
+    // Verificação de segurança para o alvo
     if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
       return;
     }
     
-    // Store the actual mouse position for direct cell movement
+    // MELHORIA: Armazenar a posição real do mouse para movimento direto da célula
     this.mousePosition = { ...target };
     
-    // Calculate direction from average position to target
+    // Calcular direção da posição média para o alvo
     const avgPos = this.getAveragePosition();
     
-    // Safety check for avgPos
+    // Verificação de segurança para avgPos
     if (!avgPos || typeof avgPos.x !== 'number' || typeof avgPos.y !== 'number') {
       return;
     }
     
-    // Calculate direction vector
+    // Calcular vetor de direção
     const dir = {
       x: target.x - avgPos.x,
       y: target.y - avgPos.y
     };
     
-    // Normalize direction
+    // Normalizar direção
     const mag = Math.sqrt(dir.x * dir.x + dir.y * dir.y);
     if (mag > 0) {
       dir.x /= mag;
@@ -622,55 +722,64 @@ export class GamePlayer implements Player {
     }
     
     this.targetDirection = dir;
+    
+    // NOVO: Verificar se o mouse está no centro da tela
+    // Isso é usado para determinar se devemos mover as células para o centro para fusão
+    const centerPos = avgPos;
+    const distToCenter = distance(target, centerPos);
+    
+    // Considerar "no centro" se estiver dentro de um raio pequeno
+    this.isMouseInCenter = distToCenter < 50;
   }
+  
   split(): void {
-    // Cooldown check
+    // Verificação de cooldown
     const now = Date.now();
-    if (now - this.lastSplitTime < 300) { // 300ms cooldown
+    if (now - this.lastSplitTime < 300) { // 300ms de cooldown
       return;
     }
     this.lastSplitTime = now;
     
-    // Only split cells that are large enough
+    // Só dividir células que são grandes o suficiente
     const newCells: PlayerCell[] = [];
     
-    // Limit total cells to prevent performance issues
+    // Limitar células totais para evitar problemas de desempenho
     if (this.cells.length >= this.maxCells) {
       return;
     }
     
-    // Count how many new cells we can create
+    // Contar quantas novas células podemos criar
     const availableSlots = this.maxCells - this.cells.length;
     if (availableSlots <= 0) return;
     
-    // Sort cells by size (largest first) to prioritize splitting larger cells
+    // Ordenar células por tamanho (maiores primeiro) para priorizar a divisão de células maiores
     const sortedCells = [...this.cells].sort((a, b) => b.mass - a.mass);
     
     let createdCells = 0;
     for (const cell of sortedCells) {
-      // Check if we've reached the limit
+      // Verificar se atingimos o limite
       if (createdCells >= availableSlots) break;
       
-      // Only split if cell is large enough
-      if (cell.mass >= this.minSplitMass * 2) { // Need double the min mass to split
+      // Só dividir se a célula for grande o suficiente
+      if (cell.mass >= this.minSplitMass * 2) { // Precisa do dobro da massa mínima para dividir
         try {
-          // Create a new cell with half the mass
+          // Criar uma nova célula com metade da massa
           const newMass = cell.mass / 2;
           const newRadius = radiusFromMass(newMass);
           
-          // Update original cell
+          // Atualizar célula original
           cell.mass = newMass;
           cell.radius = newRadius;
           
-          // IMPROVED: Create new cell in the direction toward mouse position
-          // This ensures all cells move toward the mouse when split
+          // MELHORIA: Criar nova célula na direção do mouse
+          // Isso garante que todas as células se movam em direção ao mouse quando divididas
           let dir;
           if (!this.isAI) {
-            // For human player, split toward mouse
+            // Para jogador humano, dividir em direção ao mouse
             const cellToMouse = subtract(this.mousePosition, cell.position);
             dir = normalize(cellToMouse);
           } else {
-            // For AI, use target direction
+            // Para IA, usar direção alvo
             dir = normalize(this.targetDirection);
           }
           
@@ -679,17 +788,24 @@ export class GamePlayer implements Player {
             y: cell.position.y + dir.y * cell.radius * 2
           };
           
-          const newCell = new PlayerCell(newPos, newRadius, this.color, this.id);
+          // MODIFICADO: Passar o nome do jogador para a nova célula
+          const newCell = new PlayerCell(
+            newPos, 
+            newRadius, 
+            this.color, 
+            this.id,
+            this.name // Passar o nome do jogador
+          );
           
-          // Apply velocity in the direction of the split with a boost
-          // IMPROVED: Reduced split distance but increased speed for better control
-          const splitSpeed = 2000 + newRadius * 5; // High speed but shorter duration
+          // MELHORIA: Aplicar velocidade na direção da divisão com um impulso
+          // Velocidade de divisão aumentada para melhor controle
+          const splitSpeed = 3000 + newRadius * 10; // Velocidade alta mas duração mais curta
           newCell.velocity = {
             x: dir.x * splitSpeed,
             y: dir.y * splitSpeed
           };
           
-          // Reset merge timers
+          // Redefinir temporizadores de fusão
           cell.canMerge = false;
           cell.mergeTime = 10;
           newCell.canMerge = false;
@@ -698,17 +814,17 @@ export class GamePlayer implements Player {
           newCells.push(newCell);
           createdCells++;
         } catch (error) {
-          console.error("Error splitting cell:", error);
-          // Skip this cell
+          console.error("Erro ao dividir célula:", error);
+          // Pular esta célula
           continue;
         }
       }
     }
     
-    // Add new cells to the player
+    // Adicionar novas células ao jogador
     this.cells.push(...newCells);
     
-    // Create split event for sound effects or visual feedback
+    // Criar evento de divisão para efeitos sonoros ou feedback visual
     if (newCells.length > 0) {
       const splitEvent = new CustomEvent('player-split-success', {
         detail: {
@@ -721,34 +837,34 @@ export class GamePlayer implements Player {
   }
   
   eject(): void {
-    // Cooldown check
+    // Verificação de cooldown
     const now = Date.now();
-    if (now - this.lastEjectTime < 100) { // 100ms cooldown
+    if (now - this.lastEjectTime < 100) { // 100ms de cooldown
       return;
     }
     this.lastEjectTime = now;
     
-    // Eject mass from each cell
+    // Ejetar massa de cada célula
     const ejectMass = 10;
     const ejectRadius = radiusFromMass(ejectMass);
     let ejectedCount = 0;
     
     for (const cell of this.cells) {
-      // Only eject if cell is large enough
+      // Só ejetar se a célula for grande o suficiente
       if (cell.mass > this.minEjectMass) {
         try {
-          // Reduce cell mass
+          // Reduzir massa da célula
           cell.mass -= ejectMass;
           cell.radius = radiusFromMass(cell.mass);
           
-          // IMPROVED: Eject in direction toward mouse for human player
+          // MELHORIA: Ejetar na direção do mouse para jogador humano
           let dir;
           if (!this.isAI) {
-            // For human player, eject toward mouse
+            // Para jogador humano, ejetar em direção ao mouse
             const cellToMouse = subtract(this.mousePosition, cell.position);
             dir = normalize(cellToMouse);
           } else {
-            // For AI, use target direction
+            // Para IA, usar direção alvo
             dir = normalize(this.targetDirection);
           }
           
@@ -757,19 +873,19 @@ export class GamePlayer implements Player {
             y: cell.position.y + dir.y * (cell.radius + ejectRadius)
           };
           
-          // Dispatch event for creating ejected mass
+          // Despachar evento para criar massa ejetada
           const ejectEvent = new CustomEvent('player-ejected-mass', {
             detail: {
               position: ejectPos,
-              // IMPROVED: Faster ejection for better gameplay
-              velocity: { x: dir.x * 2000, y: dir.y * 2000 },
+              // MELHORIA: Ejeção mais rápida para melhor jogabilidade
+              velocity: { x: dir.x * 3000, y: dir.y * 3000 }, // Aumentado de 2000 para 3000
               radius: ejectRadius,
               color: this.color
             }
           });
           window.dispatchEvent(ejectEvent);
           
-          // Apply recoil force to the cell
+          // Aplicar força de recuo à célula
           cell.applyForce({
             x: -dir.x * 1000,
             y: -dir.y * 1000
@@ -777,14 +893,14 @@ export class GamePlayer implements Player {
           
           ejectedCount++;
         } catch (error) {
-          console.error("Error ejecting mass:", error);
-          // Skip this cell
+          console.error("Erro ao ejetar massa:", error);
+          // Pular esta célula
           continue;
         }
       }
     }
     
-    // Create eject event for sound effects or visual feedback
+    // Criar evento de ejeção para efeitos sonoros ou feedback visual
     if (ejectedCount > 0) {
       const ejectSuccessEvent = new CustomEvent('player-eject-success', {
         detail: {
@@ -797,34 +913,34 @@ export class GamePlayer implements Player {
   }
   
   applyPowerUp(type: PowerUpType, duration: number): void {
-    // Add or extend power-up effect
+    // Adicionar ou estender efeito de power-up
     const currentDuration = this.activeEffects.get(type) || 0;
     this.activeEffects.set(type, Math.max(currentDuration, duration));
     
-    // Apply effect based on type
+    // Aplicar efeito com base no tipo
     switch (type) {
       case PowerUpType.SPEED:
-        // Speed boost is handled in movement calculations
+        // Impulso de velocidade é tratado nos cálculos de movimento
         break;
       case PowerUpType.SHIELD:
-        // Shield is handled in collision detection
+        // Escudo é tratado na detecção de colisão
         break;
       case PowerUpType.MASS_BOOST:
-        // Increase mass of all cells
+        // Aumentar massa de todas as células
         for (const cell of this.cells) {
           cell.mass *= 1.5;
           cell.radius = radiusFromMass(cell.mass);
         }
         break;
       case PowerUpType.INVISIBILITY:
-        // Invisibility is handled in rendering
+        // Invisibilidade é tratada na renderização
         break;
     }
     
-    // Update stats
+    // Atualizar estatísticas
     this.totalPowerUpsCollected++;
     
-    // Create power-up event for sound effects or visual feedback
+    // Criar evento de power-up para efeitos sonoros ou feedback visual
     const powerUpEvent = new CustomEvent('player-powerup-applied', {
       detail: {
         player: this,
@@ -849,8 +965,8 @@ export class GamePlayer implements Player {
     try {
       return this.cells.reduce((total, cell) => total + cell.mass, 0);
     } catch (error) {
-      console.error("Error calculating total mass:", error);
-      // Fallback: calculate manually
+      console.error("Erro ao calcular massa total:", error);
+      // Fallback: calcular manualmente
       let total = 0;
       for (const cell of this.cells) {
         if (cell && typeof cell.mass === 'number') {
@@ -869,7 +985,7 @@ export class GamePlayer implements Player {
       let totalY = 0;
       let totalMass = 0;
       
-      // Calculate weighted average based on cell mass
+      // Calcular média ponderada com base na massa da célula
       for (const cell of this.cells) {
         if (!cell.position || typeof cell.position.x !== 'number' || 
             typeof cell.position.y !== 'number' || typeof cell.mass !== 'number') {
@@ -888,8 +1004,8 @@ export class GamePlayer implements Player {
         y: totalY / totalMass
       };
     } catch (error) {
-      console.error("Error calculating average position:", error);
-      // Fallback: simple average
+            console.error("Erro ao calcular posição média:", error);
+      // Fallback: média simples
       if (this.cells.length === 0) return { x: 0, y: 0 };
       
       let totalX = 0;
@@ -926,12 +1042,12 @@ export class GamePlayer implements Player {
       }
       return maxRadius;
     } catch (error) {
-      console.error("Error calculating max radius:", error);
-      return 30; // Default fallback
+      console.error("Erro ao calcular raio máximo:", error);
+      return 30; // Fallback padrão
     }
   }
   
-  // Methods for stats tracking
+  // Métodos para rastreamento de estatísticas
   
   recordFoodEaten(): void {
     this.totalFoodEaten++;
@@ -955,5 +1071,30 @@ export class GamePlayer implements Player {
       totalPowerUpsCollected: this.totalPowerUpsCollected
     };
   }
-}
+  
+  // NOVO: Método para verificar se todas as células podem se fundir
+  canAllCellsMerge(): boolean {
+    return this.cells.every(cell => cell.canMerge);
+  }
+  
+  // NOVO: Método para forçar todas as células a se moverem para o centro
+  moveAllCellsToCenter(): void {
+    if (this.cells.length <= 1) return;
+    
+    const centerPos = this.getAveragePosition();
+    
+    for (const cell of this.cells) {
+      const direction = subtract(centerPos, cell.position);
+      const normalizedDir = normalize(direction);
       
+      // Aplicar força extra para mover rapidamente para o centro
+      const forceMagnitude = 300000; // Força alta para movimento rápido
+      const force = {
+        x: normalizedDir.x * forceMagnitude,
+        y: normalizedDir.y * forceMagnitude
+      };
+      
+      cell.applyForce(force);
+    }
+  }
+}

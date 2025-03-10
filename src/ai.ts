@@ -1,4 +1,4 @@
-// src/ai.ts - Updated for more responsive AI movement
+// src/ai.ts - Versão melhorada para IA mais inteligente e responsiva
 import { Entity, Vector2D, Player } from './types';
 import { 
   distance, 
@@ -10,7 +10,7 @@ import {
   magnitude
 } from './utils';
 
-// Different AI behavior types
+// Diferentes tipos de comportamento de IA
 export enum AIBehaviorType {
   WANDER,
   CHASE,
@@ -19,7 +19,12 @@ export enum AIBehaviorType {
   SPLIT_AND_CHASE,
   AMBUSH,
   DEFEND,
-  SCAVENGE
+  SCAVENGE,
+  // MELHORIA: Novos comportamentos de IA
+  PATROL,
+  HUNT,
+  BAIT,
+  TEAM_UP
 }
 
 export class AIController {
@@ -37,6 +42,17 @@ export class AIController {
   lastPosition: Vector2D;
   stuckThreshold: number;
   
+  // MELHORIA: Novas variáveis para IA melhorada
+  patrolPoints: Vector2D[];
+  currentPatrolIndex: number;
+  teamTarget: Player | null;
+  lastBehaviorChange: number;
+  behaviorDuration: number;
+  threatMemory: Map<string, number>; // Lembrar ameaças por ID e tempo
+  preyMemory: Map<string, number>; // Lembrar presas por ID e tempo
+  lastSplitTime: number;
+  splitCooldown: number;
+  
   constructor(player: Player, worldSize: Vector2D, difficultyLevel: number = 1) {
     this.player = player;
     this.behaviorType = AIBehaviorType.WANDER;
@@ -48,97 +64,160 @@ export class AIController {
     this.lastDecisionTime = 0;
     this.difficultyLevel = difficultyLevel;
     
-    // Personality type (0-3) affects decision making
+    // Tipo de personalidade (0-3) afeta a tomada de decisão
     this.personalityType = Math.floor(Math.random() * 4);
     
-    // Stuck detection
+    // Detecção de travamento
     this.stuckDetectionTimer = 0;
     this.lastPosition = { x: 0, y: 0 };
-    this.stuckThreshold = 5; // Seconds to consider AI stuck
+    this.stuckThreshold = 5; // Segundos para considerar a IA travada
+    
+    // MELHORIA: Inicializar novas variáveis
+    this.patrolPoints = this.generatePatrolPoints();
+    this.currentPatrolIndex = 0;
+    this.teamTarget = null;
+    this.lastBehaviorChange = Date.now();
+    this.behaviorDuration = 5 + Math.random() * 5; // 5-10 segundos por comportamento
+    this.threatMemory = new Map();
+    this.preyMemory = new Map();
+    this.lastSplitTime = 0;
+    // MELHORIA: Cooldown de divisão baseado na dificuldade (mais curto para IAs mais difíceis)
+    this.splitCooldown = 10000 - (difficultyLevel * 1000); // 10s a 1s
   }
   
-  update(deltaTime: number, entities: Entity[]): void {
-    // Safety check for player
-    if (!this.player || !this.player.cells || this.player.cells.length === 0) {
-      return;
+  // MELHORIA: Gerar pontos de patrulha aleatórios
+  private generatePatrolPoints(): Vector2D[] {
+    const points: Vector2D[] = [];
+    const numPoints = 3 + Math.floor(Math.random() * 3); // 3-5 pontos
+    
+    for (let i = 0; i < numPoints; i++) {
+      points.push(randomPosition(this.worldSize));
     }
     
-    // Update timers
-    this.wanderTimer -= deltaTime;
-    this.decisionTimer -= deltaTime;
-    
-    // Update stuck detection
-    this.updateStuckDetection(deltaTime);
-    
-    // Make a new decision periodically or if stuck
-    if (this.decisionTimer <= 0 || this.isStuck()) {
-      try {
-        this.makeDecision(entities);
-      } catch (error) {
-        console.error("Error in AI decision making:", error);
-        // Fallback to wandering behavior
-        this.behaviorType = AIBehaviorType.WANDER;
-        this.targetEntity = null;
-        this.wanderTarget = randomPosition(this.worldSize);
-      }
-      this.decisionTimer = 1 + Math.random() * 2; // 1-3 seconds between decisions
-      this.lastDecisionTime = Date.now();
-    }
-    
-    // Execute current behavior
+    return points;
+  }
+  
+update(deltaTime: number, entities: Entity[]): void {
+  // Verificação de segurança para o jogador
+  if (!this.player || !this.player.cells || this.player.cells.length === 0) {
+    return;
+  }
+  
+  // CORREÇÃO: Garantir que o deltaTime seja válido
+  if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
+    deltaTime = 0.016; // Padrão para 60fps
+  }
+  
+  // Atualizar temporizadores
+  this.wanderTimer -= deltaTime;
+  this.decisionTimer -= deltaTime;
+  
+  // Atualizar detecção de travamento
+  this.updateStuckDetection(deltaTime);
+  
+  // Atualizar memória de ameaças e presas
+  this.updateMemory(deltaTime);
+  
+  // CORREÇÃO: Forçar uma decisão inicial se não houver comportamento definido
+  if (this.behaviorType === undefined) {
+    this.behaviorType = AIBehaviorType.WANDER;
+    this.wanderTarget = randomPosition(this.worldSize);
+  }
+  
+  // Tomar uma nova decisão periodicamente ou se estiver travado
+  if (this.decisionTimer <= 0 || this.isStuck() || this.shouldChangeBehavior()) {
     try {
-      switch (this.behaviorType) {
-        case AIBehaviorType.WANDER:
-          this.executeWander(deltaTime);
-          break;
-        case AIBehaviorType.CHASE:
-          this.executeChase(deltaTime);
-          break;
-        case AIBehaviorType.FLEE:
-          this.executeFlee(deltaTime);
-          break;
-        case AIBehaviorType.FEED:
-          this.executeFeed(deltaTime);
-          break;
-        case AIBehaviorType.SPLIT_AND_CHASE:
-          this.executeSplitAndChase(deltaTime);
-          break;
-        case AIBehaviorType.AMBUSH:
-          this.executeAmbush(deltaTime);
-          break;
-        case AIBehaviorType.DEFEND:
-          this.executeDefend(deltaTime);
-          break;
-        case AIBehaviorType.SCAVENGE:
-          this.executeScavenge(deltaTime);
-          break;
-      }
+      this.makeDecision(entities);
     } catch (error) {
-      console.error("Error in AI behavior execution:", error);
-      // Fallback to simple wandering
+      console.error("Erro na tomada de decisão da IA:", error);
+      // Fallback para comportamento de perambulação
+      this.behaviorType = AIBehaviorType.WANDER;
+      this.targetEntity = null;
       this.wanderTarget = randomPosition(this.worldSize);
-      const playerPos = this.player.getAveragePosition();
-      const direction = subtract(this.wanderTarget, playerPos);
-      this.player.setTargetDirection(normalize(direction));
     }
+    // CORREÇÃO: Tempo de decisão baseado na dificuldade (mais rápido para IAs mais difíceis)
+    this.decisionTimer = 2 - (this.difficultyLevel * 0.15); // 2s a 0.5s
+    this.lastDecisionTime = Date.now();
+    this.lastBehaviorChange = Date.now();
+  }
+  
+  // CORREÇÃO: Garantir que sempre haja um comportamento definido
+  if (this.behaviorType === undefined) {
+    this.behaviorType = AIBehaviorType.WANDER;
+    this.wanderTarget = randomPosition(this.worldSize);
+  }
+  
+  // Executar comportamento atual
+  try {
+    switch (this.behaviorType) {
+      case AIBehaviorType.WANDER:
+        this.executeWander(deltaTime);
+        break;
+      // [Manter os outros casos]
+      default:
+        // CORREÇÃO: Fallback para perambulação se o comportamento não for reconhecido
+        this.executeWander(deltaTime);
+        break;
+    }
+  } catch (error) {
+    console.error("Erro na execução do comportamento da IA:", error);
+    // Fallback para perambulação simples
+    this.wanderTarget = randomPosition(this.worldSize);
+    const playerPos = this.player.getAveragePosition();
+    const direction = subtract(this.wanderTarget, playerPos);
+    this.player.setTargetDirection(normalize(direction));
+  }
+}
+  
+  // MELHORIA: Verificar se deve mudar de comportamento com base na duração
+  private shouldChangeBehavior(): boolean {
+    const now = Date.now();
+    const timeInCurrentBehavior = (now - this.lastBehaviorChange) / 1000;
+    
+    // Chance aleatória de mudar comportamento baseada na dificuldade
+    const changeChance = 0.1 * this.difficultyLevel * timeInCurrentBehavior / this.behaviorDuration;
+    
+    return Math.random() < changeChance;
+  }
+  
+  // MELHORIA: Atualizar memória de ameaças e presas
+  private updateMemory(deltaTime: number): void {
+    // Reduzir tempo de memória
+    this.threatMemory.forEach((time, id) => {
+      const newTime = time - deltaTime;
+      if (newTime <= 0) {
+        this.threatMemory.delete(id);
+      } else {
+        this.threatMemory.set(id, newTime);
+      }
+    });
+    
+    this.preyMemory.forEach((time, id) => {
+      const newTime = time - deltaTime;
+      if (newTime <= 0) {
+        this.preyMemory.delete(id);
+      } else {
+        this.preyMemory.set(id, newTime);
+      }
+    });
   }
   
   private updateStuckDetection(deltaTime: number): void {
     this.stuckDetectionTimer += deltaTime;
     
-    // Check position every second
+    // Verificar posição a cada segundo
     if (this.stuckDetectionTimer >= 1) {
       const currentPos = this.player.getAveragePosition();
       
-      // Initialize last position if not set
+      // Inicializar última posição se não estiver definida
       if (!this.lastPosition.x && !this.lastPosition.y) {
         this.lastPosition = { ...currentPos };
       }
       
-      // Reset timer
+      // Redefinir temporizador
       this.stuckDetectionTimer = 0;
       
-      // Update last position
+      // Atualizar última posição
       this.lastPosition = { ...currentPos };
     }
   }
@@ -147,12 +226,12 @@ export class AIController {
     const currentPos = this.player.getAveragePosition();
     const dist = distance(currentPos, this.lastPosition);
     
-    // If barely moved for several seconds, consider stuck
+    // Se mal se moveu por vários segundos, considerar travado
     return dist < 5 && this.stuckDetectionTimer > this.stuckThreshold;
   }
   
   private makeDecision(entities: Entity[]): void {
-    // Safety check for player
+    // Verificação de segurança para o jogador
     if (!this.player || !this.player.cells || this.player.cells.length === 0) {
       this.behaviorType = AIBehaviorType.WANDER;
       this.targetEntity = null;
@@ -162,63 +241,76 @@ export class AIController {
     const playerPos = this.player.getAveragePosition();
     const playerMass = this.player.getTotalMass();
     
-    // Filter out invalid entities
+    // Filtrar entidades inválidas
     const validEntities = entities.filter(entity => {
       return entity && entity.position && 
              typeof entity.position.x === 'number' && 
              typeof entity.position.y === 'number' &&
-             entity !== this.player; // Skip self
+             entity !== this.player; // Pular a si mesmo
     });
     
-    // Find nearby entities with increased detection range based on difficulty
-    const detectionRange = 500 + playerMass / 10 + (this.difficultyLevel * 100);
+    // MELHORIA: Alcance de detecção aumentado e baseado na dificuldade
+    // Encontrar entidades próximas com alcance de detecção aumentado baseado na dificuldade
+    const detectionRange = 600 + playerMass / 10 + (this.difficultyLevel * 150);
     const nearbyEntities = validEntities.filter(entity => {
       const dist = distance(playerPos, entity.position);
       return !isNaN(dist) && dist < detectionRange;
     });
     
-    // Sort entities by distance
+    // Ordenar entidades por distância
     nearbyEntities.sort((a, b) => {
       const distA = distance(playerPos, a.position);
       const distB = distance(playerPos, b.position);
       return distA - distB;
     });
     
-    // Find threats (larger players)
+    // Encontrar ameaças (jogadores maiores)
     const threats = nearbyEntities.filter(entity => {
       if ('cells' in entity && entity.cells && entity.cells.length > 0) {
         const otherPlayer = entity as Player;
-        return otherPlayer.getTotalMass() > playerMass * 1.2;
+        // MELHORIA: Considerar jogadores ligeiramente maiores como ameaças
+        return otherPlayer.getTotalMass() > playerMass * 1.1;
       }
       return false;
     });
     
-    // Find prey (smaller players)
+    // Encontrar presas (jogadores menores)
     const prey = nearbyEntities.filter(entity => {
       if ('cells' in entity && entity.cells && entity.cells.length > 0) {
         const otherPlayer = entity as Player;
-        return otherPlayer.getTotalMass() < playerMass * 0.8;
+        // MELHORIA: Considerar jogadores ligeiramente menores como presas
+        return otherPlayer.getTotalMass() < playerMass * 0.9;
       }
       return false;
     });
     
-    // Find food
+    // Encontrar comida
     const food = nearbyEntities.filter(entity => {
       return 'value' in entity && !('cells' in entity);
     });
     
-    // Find viruses
+    // Encontrar vírus
     const viruses = nearbyEntities.filter(entity => {
       return 'splitThreshold' in entity;
     });
     
-    // Find power-ups
+    // Encontrar power-ups
     const powerUps = nearbyEntities.filter(entity => {
       return 'type' in entity && 'duration' in entity;
     });
     
-    // Decision making logic based on personality and difficulty
-    this.decideBasedOnPersonality(threats, prey, food, viruses, powerUps, playerMass);
+    // MELHORIA: Encontrar possíveis companheiros de equipe (IAs de tamanho similar)
+    const potentialTeammates = nearbyEntities.filter(entity => {
+      if ('cells' in entity && entity.cells && entity.cells.length > 0 && 'isAI' in entity) {
+        const otherPlayer = entity as Player;
+        return otherPlayer.isAI && 
+               Math.abs(otherPlayer.getTotalMass() - playerMass) / playerMass < 0.3; // Dentro de 30% do tamanho
+      }
+      return false;
+    });
+    
+    // Lógica de tomada de decisão baseada na personalidade e dificuldade
+    this.decideBasedOnPersonality(threats, prey, food, viruses, powerUps, playerMass, potentialTeammates);
   }
   
   private decideBasedOnPersonality(
@@ -227,9 +319,10 @@ export class AIController {
     food: Entity[], 
     viruses: Entity[], 
     powerUps: Entity[],
-    playerMass: number
+    playerMass: number,
+    potentialTeammates: Entity[]
   ): void {
-    // Base probabilities
+    // Probabilidades base
     let fleeProb = 0.8;
     let chaseProb = 0.7;
     let feedProb = 0.6;
@@ -237,136 +330,250 @@ export class AIController {
     let ambushProb = 0.2;
     let defendProb = 0.4;
     let scavengeProb = 0.5;
+    // MELHORIA: Probabilidades para novos comportamentos
+    let patrolProb = 0.3;
+    let huntProb = 0.4;
+    let baitProb = 0.2;
+    let teamUpProb = 0.3;
     
-    // Adjust based on personality type
+    // Ajustar com base no tipo de personalidade
     switch (this.personalityType) {
-      case 0: // Aggressive
+      case 0: // Agressivo
         chaseProb += 0.2;
         splitProb += 0.3;
         fleeProb -= 0.3;
         ambushProb += 0.3;
+        huntProb += 0.3;
         break;
-      case 1: // Cautious
+      case 1: // Cauteloso
         fleeProb += 0.2;
         chaseProb -= 0.2;
         defendProb += 0.3;
+        patrolProb += 0.2;
+        baitProb += 0.2;
         break;
-      case 2: // Opportunistic
+      case 2: // Oportunista
         feedProb += 0.2;
         scavengeProb += 0.3;
         powerUps.length > 0 && (ambushProb += 0.2);
+        teamUpProb += 0.2;
         break;
-      case 3: // Balanced
-        // No adjustments
+      case 3: // Equilibrado
+        // Sem ajustes
         break;
     }
     
-    // Adjust based on difficulty level
+    // Ajustar com base no nível de dificuldade
     fleeProb -= 0.1 * this.difficultyLevel;
     chaseProb += 0.1 * this.difficultyLevel;
     splitProb += 0.1 * this.difficultyLevel;
     ambushProb += 0.1 * this.difficultyLevel;
+    huntProb += 0.1 * this.difficultyLevel;
+    teamUpProb += 0.05 * this.difficultyLevel;
     
-    // Make decision
-    if (threats.length > 0 && Math.random() < fleeProb) {
-      // Flee from threats
-      this.behaviorType = AIBehaviorType.FLEE;
-      this.targetEntity = threats[0];
-    } else if (prey.length > 0 && Math.random() < chaseProb) {
-      // Chase prey
-      this.behaviorType = AIBehaviorType.CHASE;
-      this.targetEntity = prey[0];
-      
-      // Sometimes decide to split to catch prey
-      if (playerMass > 200 && Math.random() < splitProb) {
-        this.behaviorType = AIBehaviorType.SPLIT_AND_CHASE;
-      }
-    } else if (powerUps.length > 0 && Math.random() < 0.8) {
-      // Go for power-ups with high priority
+    // MELHORIA: Ajustar com base na memória
+    // Se lembrar de ameaças, aumentar probabilidade de fuga
+    if (this.threatMemory.size > 0) {
+      fleeProb += 0.2;
+      defendProb += 0.1;
+    }
+    
+    // Se lembrar de presas, aumentar probabilidade de caça
+    if (this.preyMemory.size > 0) {
+      chaseProb += 0.2;
+      huntProb += 0.1;
+    }
+    
+    // Tomar decisão
+    // MELHORIA: Lógica de decisão mais complexa
+    
+    // Verificar power-ups primeiro (alta prioridade)
+    if (powerUps.length > 0 && Math.random() < 0.9) {
       this.behaviorType = AIBehaviorType.FEED;
       this.targetEntity = powerUps[0];
-    } else if (viruses.length > 0 && playerMass > 200 && Math.random() < defendProb) {
-      // Defend against viruses when large
-      this.behaviorType = AIBehaviorType.DEFEND;
-      this.targetEntity = viruses[0];
-    } else if (food.length > 0 && Math.random() < feedProb) {
-      // Feed on nearby food
-      this.behaviorType = AIBehaviorType.FEED;
-      this.targetEntity = food[0];
-    } else if (prey.length > 0 && Math.random() < ambushProb) {
-      // Try to ambush prey
-      this.behaviorType = AIBehaviorType.AMBUSH;
-      this.targetEntity = prey[0];
-    } else if (food.length > 0 && Math.random() < scavengeProb) {
-      // Scavenge for food in a wider area
-      this.behaviorType = AIBehaviorType.SCAVENGE;
-      // Pick a random food item, not necessarily the closest
-      const randomIndex = Math.floor(Math.random() * Math.min(food.length, 5));
-      this.targetEntity = food[randomIndex];
-    } else {
-      // Wander around
-      this.behaviorType = AIBehaviorType.WANDER;
-      this.targetEntity = null;
-      
-      // Set a new wander target if needed
-      if (this.wanderTimer <= 0) {
-        this.wanderTarget = randomPosition(this.worldSize);
-        this.wanderTimer = 5 + Math.random() * 5; // 5-10 seconds of wandering
-      }
-    }
-  }
-  
-  private executeWander(deltaTime: number): void {
-    // Safety check for player
-    if (!this.player || !this.player.cells || this.player.cells.length === 0) {
       return;
     }
     
-    // Move toward wander target
-    const playerPos = this.player.getAveragePosition();
-    const direction = subtract(this.wanderTarget, playerPos);
-    
-    // Check if we're close to the target
-    if (Math.abs(direction.x) < 10 && Math.abs(direction.y) < 10) {
-      // Set a new wander target
-      this.wanderTarget = randomPosition(this.worldSize);
-      this.wanderTimer = 5 + Math.random() * 5;
+    // Verificar ameaças imediatas
+    if (threats.length > 0) {
+      // Adicionar ameaça à memória
+      threats.forEach(threat => {
+        if ('id' in threat) {
+          this.threatMemory.set(threat.id, 10); // Lembrar por 10 segundos
+        }
+      });
+      
+      if (Math.random() < fleeProb) {
+        // Fugir de ameaças
+        this.behaviorType = AIBehaviorType.FLEE;
+        this.targetEntity = threats[0];
+        return;
+      }
     }
     
-    // Set player direction
-    this.player.setTargetDirection(normalize(direction));
+    // Verificar presas potenciais
+    if (prey.length > 0) {
+      // Adicionar presa à memória
+      prey.forEach(p => {
+        if ('id' in p) {
+          this.preyMemory.set(p.id, 15); // Lembrar por 15 segundos
+        }
+      });
+      
+      // Decidir entre diferentes táticas de caça
+      const now = Date.now();
+      const canSplit = playerMass > 200 && (now - this.lastSplitTime > this.splitCooldown);
+      
+      if (canSplit && Math.random() < splitProb) {
+        // Dividir e perseguir
+        this.behaviorType = AIBehaviorType.SPLIT_AND_CHASE;
+        this.targetEntity = prey[0];
+        this.lastSplitTime = now;
+      } else if (Math.random() < ambushProb) {
+        // Emboscar
+        this.behaviorType = AIBehaviorType.AMBUSH;
+        this.targetEntity = prey[0];
+      } else if (Math.random() < huntProb) {
+        // Caçar (perseguição mais estratégica)
+        this.behaviorType = AIBehaviorType.HUNT;
+        this.targetEntity = prey[0];
+      } else if (Math.random() < chaseProb) {
+        // Perseguição direta
+        this.behaviorType = AIBehaviorType.CHASE;
+        this.targetEntity = prey[0];
+      } else if (Math.random() < baitProb && playerMass > 150) {
+        // Usar isca (fingir ser vulnerável)
+        this.behaviorType = AIBehaviorType.BAIT;
+        this.targetEntity = prey[0];
+      }
+      
+      if (this.behaviorType !== AIBehaviorType.WANDER) {
+        return;
+      }
+    }
     
-    // Apply additional force for faster AI movement
-    for (const cell of this.player.cells) {
-      // EXTREMELY INCREASED force for AI movement
-      const forceMagnitude = 150000 * deltaTime; 
-      const force = {
-        x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
-        y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
-      };
-      cell.applyForce(force);
+    // Verificar companheiros de equipe potenciais
+    if (potentialTeammates.length > 0 && Math.random() < teamUpProb) {
+      this.behaviorType = AIBehaviorType.TEAM_UP;
+      this.teamTarget = potentialTeammates[0] as Player;
+      return;
+    }
+    
+    // Verificar vírus para defesa
+    if (viruses.length > 0 && playerMass > 150 && Math.random() < defendProb) {
+      this.behaviorType = AIBehaviorType.DEFEND;
+      this.targetEntity = viruses[0];
+      return;
+    }
+    
+    // Verificar comida
+    if (food.length > 0) {
+      if (Math.random() < scavengeProb) {
+        // Vasculhar por comida em uma área mais ampla
+        this.behaviorType = AIBehaviorType.SCAVENGE;
+        // Escolher um item de comida aleatório, não necessariamente o mais próximo
+        const randomIndex = Math.floor(Math.random() * Math.min(food.length, 5));
+        this.targetEntity = food[randomIndex];
+        return;
+      } else if (Math.random() < feedProb) {
+        // Alimentar-se de comida próxima
+        this.behaviorType = AIBehaviorType.FEED;
+        this.targetEntity = food[0];
+        return;
+      }
+    }
+    
+    // Se nenhuma decisão foi tomada, patrulhar ou perambular
+    if (Math.random() < patrolProb) {
+      this.behaviorType = AIBehaviorType.PATROL;
+      this.currentPatrolIndex = 0;
+    } else {
+      // Perambular
+      this.behaviorType = AIBehaviorType.WANDER;
+      this.targetEntity = null;
+      
+      // Definir um novo alvo de perambulação se necessário
+      if (this.wanderTimer <= 0) {
+        this.wanderTarget = randomPosition(this.worldSize);
+        this.wanderTimer = 5 + Math.random() * 5; // 5-10 segundos de perambulação
+      }
     }
   }
   
+private executeWander(deltaTime: number): void {
+  // Verificação de segurança para o jogador
+  if (!this.player || !this.player.cells || this.player.cells.length === 0) {
+    return;
+  }
+  
+  // CORREÇÃO: Garantir que wanderTarget esteja definido
+  if (!this.wanderTarget || typeof this.wanderTarget.x !== 'number' || typeof this.wanderTarget.y !== 'number') {
+    this.wanderTarget = randomPosition(this.worldSize);
+  }
+  
+  // Mover em direção ao alvo de perambulação
+  const playerPos = this.player.getAveragePosition();
+  const direction = subtract(this.wanderTarget, playerPos);
+  
+  // Verificar se estamos próximos do alvo
+  if (Math.abs(direction.x) < 10 && Math.abs(direction.y) < 10) {
+    // Definir um novo alvo de perambulação
+    this.wanderTarget = randomPosition(this.worldSize);
+    this.wanderTimer = 5 + Math.random() * 5;
+  }
+  
+  // Normalizar direção
+  const dirMag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+  let normalizedDir;
+  if (dirMag > 0) {
+    normalizedDir = {
+      x: direction.x / dirMag,
+      y: direction.y / dirMag
+    };
+  } else {
+    // Se não houver direção (estamos exatamente no alvo), escolher uma direção aleatória
+    const randomAngle = Math.random() * Math.PI * 2;
+    normalizedDir = {
+      x: Math.cos(randomAngle),
+      y: Math.sin(randomAngle)
+    };
+  }
+  
+  // Definir direção do jogador
+  this.player.setTargetDirection(normalizedDir);
+  
+  // CORREÇÃO: Aplicar força adicional para movimento mais rápido da IA
+  // Aplicar força adicional para movimento mais rápido da IA
+  for (const cell of this.player.cells) {
+    // Força EXTREMAMENTE AUMENTADA para movimento da IA
+    const forceMagnitude = 300000 * deltaTime; 
+    const force = {
+      x: normalizedDir.x * forceMagnitude,
+      y: normalizedDir.y * forceMagnitude
+    };
+    cell.applyForce(force);
+  }
+}
+  
   private executeChase(deltaTime: number): void {
-    // Safety check for player and target
+    // Verificação de segurança para jogador e alvo
     if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
         !this.targetEntity || !this.targetEntity.position) {
       this.behaviorType = AIBehaviorType.WANDER;
       return;
     }
     
-    // Move toward target
+    // Mover em direção ao alvo
     const playerPos = this.player.getAveragePosition();
     const direction = subtract(this.targetEntity.position, playerPos);
     
-    // Set player direction
+    // Definir direção do jogador
     this.player.setTargetDirection(normalize(direction));
     
-    // Apply additional force for faster AI movement
+    // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
     for (const cell of this.player.cells) {
-      // EXTREMELY INCREASED force for chase behavior
-      const forceMagnitude = 180000 * deltaTime;
+      // Força EXTREMAMENTE AUMENTADA para comportamento de perseguição
+      const forceMagnitude = 220000 * deltaTime; // Aumentado para perseguição mais agressiva
       const force = {
         x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
         y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -374,32 +581,37 @@ export class AIController {
       cell.applyForce(force);
     }
     
-    // Check if close enough to split
+    // Verificar se está próximo o suficiente para dividir
     const dist = distance(playerPos, this.targetEntity.position);
-    if (dist < 200 && this.player.getTotalMass() > 200 && Math.random() < 0.1 * this.difficultyLevel) {
+    // MELHORIA: Divisão mais inteligente baseada na dificuldade e tamanho
+    const now = Date.now();
+    const canSplit = this.player.getTotalMass() > 200 && (now - this.lastSplitTime > this.splitCooldown);
+    
+    if (dist < 200 && canSplit && Math.random() < 0.1 * this.difficultyLevel) {
       this.player.split();
+      this.lastSplitTime = now;
     }
   }
   
   private executeFlee(deltaTime: number): void {
-    // Safety check for player and target
+    // Verificação de segurança para jogador e alvo
     if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
         !this.targetEntity || !this.targetEntity.position) {
       this.behaviorType = AIBehaviorType.WANDER;
       return;
     }
     
-    // Move away from target
+    // Mover para longe do alvo
     const playerPos = this.player.getAveragePosition();
     const direction = subtract(playerPos, this.targetEntity.position);
     
-    // Set player direction
+    // Definir direção do jogador
     this.player.setTargetDirection(normalize(direction));
     
-        // Apply additional force for faster AI movement
+    // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
     for (const cell of this.player.cells) {
-      // EXTREMELY INCREASED force for flee behavior
-      const forceMagnitude = 200000 * deltaTime;
+      // Força EXTREMAMENTE AUMENTADA para comportamento de fuga
+      const forceMagnitude = 250000 * deltaTime; // Ainda mais força para fugir
       const force = {
         x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
         y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -407,37 +619,41 @@ export class AIController {
       cell.applyForce(force);
     }
     
-    // Eject mass to move faster if being chased closely
+    // Ejetar massa para mover mais rápido se estiver sendo perseguido de perto
     const dist = distance(playerPos, this.targetEntity.position);
-    if (dist < 200 && Math.random() < 0.1 * this.difficultyLevel) {
+    // MELHORIA: Ejeção mais inteligente baseada na dificuldade
+    if (dist < 200 && Math.random() < 0.15 * this.difficultyLevel) {
       this.player.eject();
     }
     
-    // Split to escape if large enough and very close
-    if (dist < 100 && this.player.getTotalMass() > 200 && Math.random() < 0.05 * this.difficultyLevel) {
+    // Dividir para escapar se for grande o suficiente e estiver muito próximo
+    const now = Date.now();
+    const canSplit = this.player.getTotalMass() > 200 && (now - this.lastSplitTime > this.splitCooldown);
+    if (dist < 100 && canSplit && Math.random() < 0.1 * this.difficultyLevel) {
       this.player.split();
+      this.lastSplitTime = now;
     }
   }
   
   private executeFeed(deltaTime: number): void {
-    // Safety check for player and target
+    // Verificação de segurança para jogador e alvo
     if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
         !this.targetEntity || !this.targetEntity.position) {
       this.behaviorType = AIBehaviorType.WANDER;
       return;
     }
     
-    // Move toward food
+    // Mover em direção à comida
     const playerPos = this.player.getAveragePosition();
     const direction = subtract(this.targetEntity.position, playerPos);
     
-    // Set player direction
+    // Definir direção do jogador
     this.player.setTargetDirection(normalize(direction));
     
-    // Apply additional force for faster AI movement
+    // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
     for (const cell of this.player.cells) {
-      // INCREASED force for feeding behavior
-      const forceMagnitude = 150000 * deltaTime;
+      // Força AUMENTADA para comportamento de alimentação
+      const forceMagnitude = 180000 * deltaTime; // Ajustado para alimentação mais eficiente
       const force = {
         x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
         y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -447,24 +663,24 @@ export class AIController {
   }
   
   private executeSplitAndChase(deltaTime: number): void {
-    // Safety check for player and target
+    // Verificação de segurança para jogador e alvo
     if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
         !this.targetEntity || !this.targetEntity.position) {
       this.behaviorType = AIBehaviorType.WANDER;
       return;
     }
     
-    // Move toward target
+    // Mover em direção ao alvo
     const playerPos = this.player.getAveragePosition();
     const direction = subtract(this.targetEntity.position, playerPos);
     
-    // Set player direction
+    // Definir direção do jogador
     this.player.setTargetDirection(normalize(direction));
     
-    // Apply additional force for faster AI movement
+    // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
     for (const cell of this.player.cells) {
-      // INCREASED force for split and chase behavior
-      const forceMagnitude = 180000 * deltaTime;
+      // Força AUMENTADA para comportamento de dividir e perseguir
+      const forceMagnitude = 220000 * deltaTime; // Ajustado para perseguição mais agressiva
       const force = {
         x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
         y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -472,47 +688,52 @@ export class AIController {
       cell.applyForce(force);
     }
     
-    // Split if close enough and big enough
+    // Dividir se estiver próximo o suficiente e for grande o suficiente
     const dist = distance(playerPos, this.targetEntity.position);
-    if (dist < 200 && this.player.getTotalMass() > 200) {
+    const now = Date.now();
+    const canSplit = this.player.getTotalMass() > 200 && (now - this.lastSplitTime > this.splitCooldown);
+    
+    if (dist < 200 && canSplit) {
       this.player.split();
-      this.behaviorType = AIBehaviorType.CHASE; // Switch to regular chase after splitting
+      this.lastSplitTime = now;
+      this.behaviorType = AIBehaviorType.CHASE; // Mudar para perseguição regular após dividir
     }
   }
   
   private executeAmbush(deltaTime: number): void {
-    // Safety check for player and target
+    // Verificação de segurança para jogador e alvo
     if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
         !this.targetEntity || !this.targetEntity.position) {
       this.behaviorType = AIBehaviorType.WANDER;
       return;
     }
     
-    // Get positions
+    // Obter posições
     const playerPos = this.player.getAveragePosition();
     const targetPos = this.targetEntity.position;
     
-    // Calculate ambush position (try to get ahead of the target)
+    // Calcular posição de emboscada (tentar ficar à frente do alvo)
     if ('velocity' in this.targetEntity && this.targetEntity.velocity) {
       const targetVelocity = this.targetEntity.velocity;
       const targetSpeed = magnitude(targetVelocity);
       
       if (targetSpeed > 0) {
-        // Predict where the target will be
-        const predictionFactor = 2.0; // Look ahead factor
+        // Prever onde o alvo estará
+        // MELHORIA: Fator de previsão baseado na dificuldade
+        const predictionFactor = 2.0 + (this.difficultyLevel * 0.3); // Olhar mais à frente para dificuldades mais altas
         const predictedPos = {
           x: targetPos.x + targetVelocity.x * predictionFactor,
           y: targetPos.y + targetVelocity.y * predictionFactor
         };
         
-        // Move toward the predicted position
+        // Mover em direção à posição prevista
         const direction = subtract(predictedPos, playerPos);
         this.player.setTargetDirection(normalize(direction));
         
-        // Apply additional force for faster AI movement
+        // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
         for (const cell of this.player.cells) {
-          // INCREASED force for ambush behavior
-          const forceMagnitude = 170000 * deltaTime;
+          // Força AUMENTADA para comportamento de emboscada
+          const forceMagnitude = 200000 * deltaTime;
           const force = {
             x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
             y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -520,10 +741,14 @@ export class AIController {
           cell.applyForce(force);
         }
         
-        // If we're close to the ambush position and the target is approaching, split
+        // Se estivermos próximos da posição de emboscada e o alvo estiver se aproximando, dividir
         const distToTarget = distance(playerPos, targetPos);
-        if (distToTarget < 150 && this.player.getTotalMass() > 200) {
+        const now = Date.now();
+        const canSplit = this.player.getTotalMass() > 200 && (now - this.lastSplitTime > this.splitCooldown);
+        
+        if (distToTarget < 150 && canSplit) {
           this.player.split();
+          this.lastSplitTime = now;
           this.behaviorType = AIBehaviorType.CHASE;
         }
         
@@ -531,14 +756,14 @@ export class AIController {
       }
     }
     
-    // Fallback if target has no velocity: just chase directly
+    // Fallback se o alvo não tiver velocidade: apenas perseguir diretamente
     const direction = subtract(targetPos, playerPos);
     this.player.setTargetDirection(normalize(direction));
     
-    // Apply additional force for faster AI movement
+    // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
     for (const cell of this.player.cells) {
-      // INCREASED force for fallback chase
-      const forceMagnitude = 150000 * deltaTime;
+      // Força AUMENTADA para perseguição de fallback
+      const forceMagnitude = 180000 * deltaTime;
       const force = {
         x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
         y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -548,29 +773,29 @@ export class AIController {
   }
   
   private executeDefend(deltaTime: number): void {
-    // Safety check for player and target
+    // Verificação de segurança para jogador e alvo
     if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
         !this.targetEntity || !this.targetEntity.position) {
       this.behaviorType = AIBehaviorType.WANDER;
       return;
     }
     
-    // Get positions
+    // Obter posições
     const playerPos = this.player.getAveragePosition();
     const virusPos = this.targetEntity.position;
     
-    // Calculate distance to virus
+    // Calcular distância até o vírus
     const distToVirus = distance(playerPos, virusPos);
     
     if (distToVirus < 200) {
-      // Too close to virus, move away
+      // Muito próximo do vírus, afastar-se
       const direction = subtract(playerPos, virusPos);
       this.player.setTargetDirection(normalize(direction));
       
-      // Apply additional force for faster AI movement
+      // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
       for (const cell of this.player.cells) {
-        // INCREASED force for moving away from virus
-        const forceMagnitude = 180000 * deltaTime;
+        // Força AUMENTADA para afastar-se do vírus
+        const forceMagnitude = 220000 * deltaTime;
         const force = {
           x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
           y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -578,7 +803,7 @@ export class AIController {
         cell.applyForce(force);
       }
     } else {
-      // Look for prey near the virus to ambush
+      // Procurar presas perto do vírus para emboscar
       const nearbyEntities = this.getNearbyEntities();
       const preyNearVirus = nearbyEntities.filter(entity => {
         if ('cells' in entity && entity.cells && entity.cells.length > 0) {
@@ -590,7 +815,7 @@ export class AIController {
       });
       
       if (preyNearVirus.length > 0) {
-        // Move to position between virus and prey
+        // Mover para posição entre vírus e presa
         const prey = preyNearVirus[0];
         const midPoint = {
           x: (virusPos.x + prey.position.x) / 2,
@@ -600,10 +825,10 @@ export class AIController {
         const direction = subtract(midPoint, playerPos);
         this.player.setTargetDirection(normalize(direction));
         
-        // Apply additional force for faster AI movement
+        // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
         for (const cell of this.player.cells) {
-          // INCREASED force for positioning
-          const forceMagnitude = 150000 * deltaTime;
+          // Força AUMENTADA para posicionamento
+          const forceMagnitude = 180000 * deltaTime;
           const force = {
             x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
             y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -611,60 +836,61 @@ export class AIController {
           cell.applyForce(force);
         }
         
-        // Eject mass toward virus if prey is close to it
+        // Ejetar massa em direção ao vírus se a presa estiver próxima dele
         const preyToVirus = distance(prey.position, virusPos);
-        if (preyToVirus < 100 && Math.random() < 0.2 * this.difficultyLevel) {
-          // Calculate direction to virus
+        // MELHORIA: Ejeção mais inteligente baseada na dificuldade
+        if (preyToVirus < 100 && Math.random() < 0.3 * this.difficultyLevel) {
+          // Calcular direção para o vírus
           const virusDirection = subtract(virusPos, playerPos);
           this.player.setTargetDirection(normalize(virusDirection));
           this.player.eject();
           
-          // Reset direction after ejecting
+          // Redefinir direção após ejetar
           this.player.setTargetDirection(normalize(direction));
         }
       } else {
-        // No prey near virus, just wander
+        // Nenhuma presa perto do vírus, apenas perambular
         this.behaviorType = AIBehaviorType.WANDER;
       }
     }
   }
   
   private executeScavenge(deltaTime: number): void {
-    // Safety check for player
+    // Verificação de segurança para o jogador
     if (!this.player || !this.player.cells || this.player.cells.length === 0) {
       return;
     }
     
-    // If we have a target, move toward it
+    // Se tivermos um alvo, mover em direção a ele
     if (this.targetEntity && this.targetEntity.position) {
       const playerPos = this.player.getAveragePosition();
       const direction = subtract(this.targetEntity.position, playerPos);
       
-      // Check if we're close to the target
+      // Verificar se estamos próximos do alvo
       if (distance(playerPos, this.targetEntity.position) < 10) {
-        // Find a new food target
+        // Encontrar um novo alvo de comida
         const nearbyEntities = this.getNearbyEntities();
         const foodEntities = nearbyEntities.filter(entity => 
           'value' in entity && !('cells' in entity)
         );
         
         if (foodEntities.length > 0) {
-          // Pick a random food item within range
+          // Escolher um item de comida aleatório dentro do alcance
           const randomIndex = Math.floor(Math.random() * Math.min(foodEntities.length, 10));
           this.targetEntity = foodEntities[randomIndex];
         } else {
-          // No food nearby, switch to wander
+          // Nenhuma comida por perto, mudar para perambular
           this.behaviorType = AIBehaviorType.WANDER;
           this.wanderTarget = randomPosition(this.worldSize);
         }
       } else {
-        // Continue moving toward target
+        // Continuar movendo em direção ao alvo
         this.player.setTargetDirection(normalize(direction));
         
-        // Apply additional force for faster AI movement
+        // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
         for (const cell of this.player.cells) {
-          // INCREASED force for scavenging
-          const forceMagnitude = 150000 * deltaTime;
+          // Força AUMENTADA para vasculhar
+          const forceMagnitude = 180000 * deltaTime;
           const force = {
             x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
             y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
@@ -673,28 +899,401 @@ export class AIController {
         }
       }
     } else {
-      // No target, switch to wander
+      // Nenhum alvo, mudar para perambular
       this.behaviorType = AIBehaviorType.WANDER;
       this.wanderTarget = randomPosition(this.worldSize);
     }
   }
   
+  // MELHORIA: Implementar novos comportamentos
+  
+  private executePatrol(deltaTime: number): void {
+    // Verificação de segurança para o jogador
+    if (!this.player || !this.player.cells || this.player.cells.length === 0) {
+      return;
+    }
+    
+    // Verificar se temos pontos de patrulha
+    if (!this.patrolPoints || this.patrolPoints.length === 0) {
+      this.patrolPoints = this.generatePatrolPoints();
+    }
+    
+    // Obter o ponto de patrulha atual
+    const currentPoint = this.patrolPoints[this.currentPatrolIndex];
+    const playerPos = this.player.getAveragePosition();
+    
+    // Mover em direção ao ponto de patrulha atual
+    const direction = subtract(currentPoint, playerPos);
+    this.player.setTargetDirection(normalize(direction));
+    
+    // MELHORIA: Aplicar força adicional para movimento mais rápido da IA
+    for (const cell of this.player.cells) {
+      // Força para patrulha
+      const forceMagnitude = 150000 * deltaTime;
+      const force = {
+        x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+        y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+      };
+      cell.applyForce(force);
+    }
+    
+    // Verificar se chegamos ao ponto de patrulha atual
+    if (distance(playerPos, currentPoint) < 50) {
+      // Avançar para o próximo ponto
+      this.currentPatrolIndex = (this.currentPatrolIndex + 1) % this.patrolPoints.length;
+    }
+    
+    // Verificar por ameaças ou oportunidades durante a patrulha
+    const nearbyEntities = this.getNearbyEntities();
+    
+    // Verificar por presas fáceis
+    const easyPrey = nearbyEntities.filter(entity => {
+      if ('cells' in entity && entity.cells && entity.cells.length > 0) {
+        const otherPlayer = entity as Player;
+        return otherPlayer.getTotalMass() < this.player.getTotalMass() * 0.6; // Muito menor
+      }
+      return false;
+    });
+    
+    // Verificar por ameaças sérias
+    const seriousThreats = nearbyEntities.filter(entity => {
+      if ('cells' in entity && entity.cells && entity.cells.length > 0) {
+        const otherPlayer = entity as Player;
+        return otherPlayer.getTotalMass() > this.player.getTotalMass() * 1.4; // Muito maior
+      }
+      return false;
+    });
+    
+    // Reagir a ameaças ou oportunidades
+    if (seriousThreats.length > 0 && Math.random() < 0.8) {
+      // Mudar para fuga
+      this.behaviorType = AIBehaviorType.FLEE;
+      this.targetEntity = seriousThreats[0];
+    } else if (easyPrey.length > 0 && Math.random() < 0.7) {
+      // Mudar para perseguição
+      this.behaviorType = AIBehaviorType.CHASE;
+      this.targetEntity = easyPrey[0];
+    }
+  }
+  
+  private executeHunt(deltaTime: number): void {
+    // Verificação de segurança para jogador e alvo
+    if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
+        !this.targetEntity || !this.targetEntity.position) {
+      this.behaviorType = AIBehaviorType.WANDER;
+      return;
+    }
+    
+    // Obter posições
+    const playerPos = this.player.getAveragePosition();
+    const targetPos = this.targetEntity.position;
+    
+    // Calcular distância até o alvo
+    const distToTarget = distance(playerPos, targetPos);
+    
+    // MELHORIA: Comportamento de caça mais sofisticado
+    if (distToTarget > 500) {
+      // Alvo está longe, mover diretamente em direção a ele
+      const direction = subtract(targetPos, playerPos);
+      this.player.setTargetDirection(normalize(direction));
+      
+      // Aplicar força para movimento rápido
+      for (const cell of this.player.cells) {
+        const forceMagnitude = 220000 * deltaTime;
+        const force = {
+          x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+          y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+        };
+        cell.applyForce(force);
+      }
+    } else if (distToTarget > 200) {
+      // Alvo está a média distância, tentar prever movimento
+      if ('velocity' in this.targetEntity && this.targetEntity.velocity) {
+        const targetVelocity = this.targetEntity.velocity;
+        const targetSpeed = magnitude(targetVelocity);
+        
+        if (targetSpeed > 0) {
+          // Prever onde o alvo estará
+          const predictionFactor = 3.0 + (this.difficultyLevel * 0.5);
+          const predictedPos = {
+            x: targetPos.x + targetVelocity.x * predictionFactor,
+            y: targetPos.y + targetVelocity.y * predictionFactor
+          };
+          
+          // Mover para interceptar
+          const direction = subtract(predictedPos, playerPos);
+          this.player.setTargetDirection(normalize(direction));
+          
+          // Aplicar força para movimento rápido
+          for (const cell of this.player.cells) {
+            const forceMagnitude = 250000 * deltaTime;
+            const force = {
+              x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+              y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+            };
+            cell.applyForce(force);
+          }
+        }
+      }
+    } else {
+      // Alvo está próximo, preparar para dividir ou atacar diretamente
+      const direction = subtract(targetPos, playerPos);
+      this.player.setTargetDirection(normalize(direction));
+      
+      // Aplicar força para movimento preciso
+      for (const cell of this.player.cells) {
+        const forceMagnitude = 200000 * deltaTime;
+        const force = {
+          x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+          y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+        };
+        cell.applyForce(force);
+      }
+      
+      // Verificar se deve dividir
+      const now = Date.now();
+      const canSplit = this.player.getTotalMass() > 200 && (now - this.lastSplitTime > this.splitCooldown);
+      
+      if (distToTarget < 150 && canSplit && Math.random() < 0.2 * this.difficultyLevel) {
+        this.player.split();
+        this.lastSplitTime = now;
+      }
+    }
+    
+    // Verificar se o alvo escapou ou está muito longe
+    if (distToTarget > 800) {
+      // Desistir da caça e voltar a perambular
+      this.behaviorType = AIBehaviorType.WANDER;
+      this.wanderTarget = randomPosition(this.worldSize);
+    }
+  }
+  
+  private executeBait(deltaTime: number): void {
+    // Verificação de segurança para jogador e alvo
+    if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
+        !this.targetEntity || !this.targetEntity.position) {
+      this.behaviorType = AIBehaviorType.WANDER;
+      return;
+    }
+    
+    // Obter posições
+    const playerPos = this.player.getAveragePosition();
+    const targetPos = this.targetEntity.position;
+    
+    // Calcular distância até o alvo
+    const distToTarget = distance(playerPos, targetPos);
+    
+    // MELHORIA: Comportamento de isca - fingir ser vulnerável
+    if (distToTarget > 400) {
+      // Alvo está longe, mover em sua direção
+      const direction = subtract(targetPos, playerPos);
+      this.player.setTargetDirection(normalize(direction));
+      
+      // Mover mais lentamente para parecer vulnerável
+      for (const cell of this.player.cells) {
+        const forceMagnitude = 100000 * deltaTime; // Força reduzida
+        const force = {
+          x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+          y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+        };
+        cell.applyForce(force);
+      }
+    } else if (distToTarget > 200) {
+      // Alvo está a média distância, fingir estar distraído
+      // Mover em padrão de zigue-zague
+      const time = Date.now() / 1000;
+      const zigzag = Math.sin(time * 3) * 0.5;
+      
+      const baseDirection = subtract(targetPos, playerPos);
+      const normalizedDir = normalize(baseDirection);
+      
+      // Adicionar componente perpendicular para zigue-zague
+      const perpDirection = {
+        x: -normalizedDir.y * zigzag,
+        y: normalizedDir.x * zigzag
+      };
+      
+      const finalDirection = {
+        x: normalizedDir.x + perpDirection.x,
+        y: normalizedDir.y + perpDirection.y
+      };
+      
+      this.player.setTargetDirection(normalize(finalDirection));
+      
+      // Mover com velocidade média
+      for (const cell of this.player.cells) {
+        const forceMagnitude = 120000 * deltaTime;
+        const force = {
+          x: finalDirection.x * forceMagnitude / Math.max(1, magnitude(finalDirection)),
+          y: finalDirection.y * forceMagnitude / Math.max(1, magnitude(finalDirection))
+        };
+        cell.applyForce(force);
+      }
+    } else {
+      // Alvo está próximo, atacar de repente!
+      const direction = subtract(targetPos, playerPos);
+      this.player.setTargetDirection(normalize(direction));
+      
+      // Mover muito rapidamente para surpreender
+      for (const cell of this.player.cells) {
+        const forceMagnitude = 300000 * deltaTime; // Força muito alta
+        const force = {
+          x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+          y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+        };
+        cell.applyForce(force);
+      }
+      
+      // Tentar dividir para capturar
+      const now = Date.now();
+      const canSplit = this.player.getTotalMass() > 200 && (now - this.lastSplitTime > this.splitCooldown);
+      
+      if (distToTarget < 150 && canSplit) {
+        this.player.split();
+        this.lastSplitTime = now;
+        // Mudar para perseguição direta
+        this.behaviorType = AIBehaviorType.CHASE;
+      }
+    }
+  }
+  
+  private executeTeamUp(deltaTime: number): void {
+    // Verificação de segurança para jogador e companheiro de equipe
+    if (!this.player || !this.player.cells || this.player.cells.length === 0 || 
+        !this.teamTarget || !this.teamTarget.cells || this.teamTarget.cells.length === 0) {
+      this.behaviorType = AIBehaviorType.WANDER;
+      return;
+    }
+    
+    // Obter posições
+    const playerPos = this.player.getAveragePosition();
+    const teammatePos = this.teamTarget.getAveragePosition();
+    
+    // Calcular distância até o companheiro
+    const distToTeammate = distance(playerPos, teammatePos);
+    
+    // MELHORIA: Comportamento de equipe
+    if (distToTeammate > 300) {
+      // Companheiro está longe, mover em sua direção
+      const direction = subtract(teammatePos, playerPos);
+      this.player.setTargetDirection(normalize(direction));
+      
+      // Mover rapidamente para alcançar o companheiro
+      for (const cell of this.player.cells) {
+        const forceMagnitude = 200000 * deltaTime;
+        const force = {
+          x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+          y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+        };
+        cell.applyForce(force);
+      }
+    } else {
+      // Próximo ao companheiro, procurar alvos em conjunto
+      const nearbyEntities = this.getNearbyEntities();
+      
+      // Procurar por presas potenciais
+      const potentialPrey = nearbyEntities.filter(entity => {
+        if ('cells' in entity && entity.cells && entity.cells.length > 0) {
+          const otherPlayer = entity as Player;
+          // Alvo que seria difícil sozinho, mas possível em equipe
+          const combinedMass = this.player.getTotalMass() + this.teamTarget.getTotalMass();
+          return otherPlayer.getTotalMass() < combinedMass * 0.8 && 
+                 otherPlayer.getTotalMass() > this.player.getTotalMass();
+        }
+        return false;
+      });
+      
+      if (potentialPrey.length > 0) {
+        // Encontrou presa, coordenar ataque
+        const prey = potentialPrey[0];
+        
+        // Calcular posição para flanquear (ficar do lado oposto ao companheiro)
+        const teammateToPreyDir = subtract(prey.position, teammatePos);
+        const normalizedDir = normalize(teammateToPreyDir);
+        
+        // Posição oposta
+        const flankPos = {
+          x: prey.position.x - normalizedDir.x * 200,
+          y: prey.position.y - normalizedDir.y * 200
+        };
+        
+        // Mover para posição de flanqueamento
+        const direction = subtract(flankPos, playerPos);
+        this.player.setTargetDirection(normalize(direction));
+        
+        // Mover rapidamente para posição
+        for (const cell of this.player.cells) {
+          const forceMagnitude = 220000 * deltaTime;
+          const force = {
+            x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+            y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+          };
+          cell.applyForce(force);
+        }
+        
+        // Verificar se está em posição para atacar
+        const distToPrey = distance(playerPos, prey.position);
+        const now = Date.now();
+        const canSplit = this.player.getTotalMass() > 200 && (now - this.lastSplitTime > this.splitCooldown);
+        
+        if (distToPrey < 150 && canSplit) {
+          // Atacar!
+          this.player.split();
+          this.lastSplitTime = now;
+          this.behaviorType = AIBehaviorType.CHASE;
+          this.targetEntity = prey;
+        }
+      } else {
+        // Nenhuma presa adequada, manter-se próximo ao companheiro
+        // Calcular posição ligeiramente afastada
+        const offset = {
+          x: Math.cos(Date.now() / 1000) * 100,
+          y: Math.sin(Date.now() / 1000) * 100
+        };
+        
+        const targetPos = {
+          x: teammatePos.x + offset.x,
+          y: teammatePos.y + offset.y
+        };
+        
+        const direction = subtract(targetPos, playerPos);
+        this.player.setTargetDirection(normalize(direction));
+        
+        // Mover suavemente
+        for (const cell of this.player.cells) {
+          const forceMagnitude = 150000 * deltaTime;
+          const force = {
+            x: direction.x * forceMagnitude / Math.max(1, magnitude(direction)),
+            y: direction.y * forceMagnitude / Math.max(1, magnitude(direction))
+          };
+          cell.applyForce(force);
+        }
+      }
+    }
+    
+    // Verificar se o companheiro ainda é adequado
+    if (Math.abs(this.player.getTotalMass() - this.teamTarget.getTotalMass()) / this.player.getTotalMass() > 0.5) {
+      // Diferença de tamanho muito grande, abandonar equipe
+      this.behaviorType = AIBehaviorType.WANDER;
+    }
+  }
+  
   // src/ai.ts (continuação)
   private getNearbyEntities(): Entity[] {
-    // This method should be called with the entities from the game
-    // Since we don't have direct access to the game state here,
-    // we'll implement a workaround
+    // Este método deve ser chamado com as entidades do jogo
+    // Como não temos acesso direto ao estado do jogo aqui,
+    // implementaremos uma solução alternativa
     
-    // Create a custom event to request entities
+    // Criar um evento personalizado para solicitar entidades
     const requestEvent = new CustomEvent('ai-request-entities', {
       detail: {
         aiId: this.player.id,
         position: this.player.getAveragePosition(),
-        range: 500 + this.difficultyLevel * 100
+        range: 600 + this.difficultyLevel * 150
       }
     });
     
-    // Create a response handler
+    // Criar um manipulador de resposta
     let entities: Entity[] = [];
     const responseHandler = (e: any) => {
       if (e.detail.aiId === this.player.id) {
@@ -702,24 +1301,24 @@ export class AIController {
       }
     };
     
-    // Listen for response
+    // Ouvir resposta
     window.addEventListener('ai-entities-response', responseHandler);
     
-    // Dispatch request
+    // Despachar solicitação
     window.dispatchEvent(requestEvent);
     
-    // Remove listener
+    // Remover listener
     window.removeEventListener('ai-entities-response', responseHandler);
     
     return entities;
   }
   
-  // Helper methods for improved AI behavior
+  // Métodos auxiliares para comportamento de IA melhorado
   
   private findSafeDirection(threats: Entity[]): Vector2D {
     const playerPos = this.player.getAveragePosition();
     
-    // If no threats, move toward center
+    // Se não houver ameaças, mover em direção ao centro
     if (threats.length === 0) {
       const centerDirection = subtract(
         { x: this.worldSize.x / 2, y: this.worldSize.y / 2 },
@@ -728,23 +1327,25 @@ export class AIController {
       return normalize(centerDirection);
     }
     
-    // Calculate average threat direction
+    // Calcular direção média da ameaça
     let threatDirection = { x: 0, y: 0 };
     for (const threat of threats) {
       const direction = subtract(playerPos, threat.position);
       threatDirection = add(threatDirection, normalize(direction));
     }
     
-    // Normalize the resulting direction
+    // Normalizar a direção resultante
     return normalize(threatDirection);
   }
   
   private shouldSplit(target: Entity): boolean {
-    // Only split if:
-    // 1. We're big enough
-    // 2. Target is smaller than us
-    // 3. We're close enough to the target
-    // 4. We don't have too many cells already
+    // MELHORIA: Lógica de divisão mais inteligente
+    // Só dividir se:
+    // 1. Somos grandes o suficiente
+    // 2. O alvo é menor que nós
+    // 3. Estamos próximos o suficiente do alvo
+    // 4. Não temos muitas células já
+    // 5. O cooldown de divisão passou
     
     if (this.player.cells.length >= this.player.maxCells / 2) {
       return false;
@@ -755,36 +1356,42 @@ export class AIController {
       return false;
     }
     
-    // Check if target is a player
+    const now = Date.now();
+    if (now - this.lastSplitTime < this.splitCooldown) {
+      return false;
+    }
+    
+    // Verificar se o alvo é um jogador
     if ('cells' in target) {
       const targetPlayer = target as Player;
-      if (targetPlayer.getTotalMass() * 1.5 > playerMass) {
+      if (targetPlayer.getTotalMass() * 1.3 > playerMass) {
         return false;
       }
     }
     
-    // Check distance
+    // Verificar distância
     const playerPos = this.player.getAveragePosition();
     const dist = distance(playerPos, target.position);
     
-    // Higher difficulty AIs are more aggressive with splitting
+    // IAs mais difíceis são mais agressivas com a divisão
     const splitDistance = 200 + (this.difficultyLevel * 50);
     
     return dist < splitDistance;
   }
   
   private shouldEject(): boolean {
-    // Eject mass if:
-    // 1. We're big enough
-    // 2. We're not in immediate danger
-    // 3. Random chance based on difficulty
+    // MELHORIA: Lógica de ejeção mais inteligente
+    // Ejetar massa se:
+    // 1. Somos grandes o suficiente
+    // 2. Não estamos em perigo imediato
+    // 3. Chance aleatória baseada na dificuldade
     
     const playerMass = this.player.getTotalMass();
     if (playerMass < 100) {
       return false;
     }
     
-    // Check for nearby threats
+    // Verificar ameaças próximas
     const nearbyEntities = this.getNearbyEntities();
     const threats = nearbyEntities.filter(entity => {
       if ('cells' in entity && entity.cells && entity.cells.length > 0) {
@@ -795,39 +1402,39 @@ export class AIController {
     });
     
     if (threats.length > 0) {
-      // Don't eject if there are threats nearby
+      // Não ejetar se houver ameaças próximas
       return false;
     }
     
-    // Random chance based on difficulty and personality
+    // Chance aleatória baseada na dificuldade e personalidade
     let ejectChance = 0.01;
     
-    // Aggressive personalities eject more
+    // Personalidades agressivas ejetam mais
     if (this.personalityType === 0) {
       ejectChance *= 2;
     }
     
-    // Higher difficulty AIs eject more strategically
+    // IAs mais difíceis ejetam mais estrategicamente
     ejectChance *= this.difficultyLevel;
     
     return Math.random() < ejectChance;
   }
   
   private findOptimalPath(target: Vector2D): Vector2D {
-    // Implement pathfinding to avoid obstacles
+    // MELHORIA: Implementar pathfinding para evitar obstáculos
     const playerPos = this.player.getAveragePosition();
     
-    // Get nearby entities
+    // Obter entidades próximas
     const nearbyEntities = this.getNearbyEntities();
     
-    // Find viruses and larger players to avoid
+    // Encontrar vírus e jogadores maiores para evitar
     const obstacles = nearbyEntities.filter(entity => {
-      // Avoid viruses if we're big
+      // Evitar vírus se formos grandes
       if ('splitThreshold' in entity && this.player.getTotalMass() > 150) {
         return true;
       }
       
-      // Avoid larger players
+      // Evitar jogadores maiores
       if ('cells' in entity && entity.cells && entity.cells.length > 0) {
         const otherPlayer = entity as Player;
         return otherPlayer.getTotalMass() > this.player.getTotalMass() * 1.2;
@@ -836,35 +1443,35 @@ export class AIController {
       return false;
     });
     
-    // If no obstacles, go directly to target
+    // Se não houver obstáculos, ir diretamente para o alvo
     if (obstacles.length === 0) {
       return normalize(subtract(target, playerPos));
     }
     
-    // Calculate direct path
+    // Calcular caminho direto
     const directPath = subtract(target, playerPos);
     const directDistance = magnitude(directPath);
     
-    // Check if any obstacle is in the way
+    // Verificar se algum obstáculo está no caminho
     let obstacleInPath = false;
     for (const obstacle of obstacles) {
-      // Calculate perpendicular distance from obstacle to path
+      // Calcular distância perpendicular do obstáculo ao caminho
       const obstacleVector = subtract(obstacle.position, playerPos);
       const projection = (obstacleVector.x * directPath.x + obstacleVector.y * directPath.y) / directDistance;
       
-      // Skip obstacles behind us
+      // Pular obstáculos atrás de nós
       if (projection < 0) continue;
       
-      // Skip obstacles beyond the target
+      // Pular obstáculos além do alvo
       if (projection > directDistance) continue;
       
-      // Calculate closest point on path to obstacle
+      // Calcular ponto mais próximo no caminho ao obstáculo
       const closestPoint = {
         x: playerPos.x + (directPath.x * projection / directDistance),
         y: playerPos.y + (directPath.y * projection / directDistance)
       };
       
-      // Check if obstacle is close enough to the path to be a concern
+      // Verificar se o obstáculo está próximo o suficiente do caminho para ser uma preocupação
       const obstacleRadius = 'radius' in obstacle ? obstacle.radius : 30;
       const safeDistance = obstacleRadius + this.player.getMaxRadius() * 1.5;
       
@@ -874,28 +1481,28 @@ export class AIController {
       }
     }
     
-    // If no obstacle in path, go directly
+    // Se não houver obstáculo no caminho, ir diretamente
     if (!obstacleInPath) {
       return normalize(directPath);
     }
     
-    // Find alternative path
-    // Try several angles and pick the one with least obstacles
+    // Encontrar caminho alternativo
+    // Tentar vários ângulos e escolher o que tiver menos obstáculos
     const angles = [Math.PI/6, -Math.PI/6, Math.PI/3, -Math.PI/3, Math.PI/2, -Math.PI/2];
     let bestAngle = 0;
     let minObstacles = Infinity;
     
     for (const angle of angles) {
-      // Rotate the direct path
+      // Rotacionar o caminho direto
       const rotatedPath = {
         x: directPath.x * Math.cos(angle) - directPath.y * Math.sin(angle),
         y: directPath.x * Math.sin(angle) + directPath.y * Math.cos(angle)
       };
       
-      // Count obstacles in this path
+      // Contar obstáculos neste caminho
       let obstacleCount = 0;
       for (const obstacle of obstacles) {
-        // Similar calculation as above
+        // Cálculo similar ao acima
         const obstacleVector = subtract(obstacle.position, playerPos);
         const projection = (obstacleVector.x * rotatedPath.x + obstacleVector.y * rotatedPath.y) / magnitude(rotatedPath);
         
@@ -914,14 +1521,14 @@ export class AIController {
         }
       }
       
-      // Update best angle if this one has fewer obstacles
+      // Atualizar melhor ângulo se este tiver menos obstáculos
       if (obstacleCount < minObstacles) {
         minObstacles = obstacleCount;
         bestAngle = angle;
       }
     }
     
-    // Rotate the direct path by the best angle
+    // Rotacionar o caminho direto pelo melhor ângulo
     const bestPath = {
       x: directPath.x * Math.cos(bestAngle) - directPath.y * Math.sin(bestAngle),
       y: directPath.x * Math.sin(bestAngle) + directPath.y * Math.cos(bestAngle)
@@ -930,26 +1537,26 @@ export class AIController {
     return normalize(bestPath);
   }
   
-  // Method to handle special situations
+  // Método para lidar com situações especiais
   handleSpecialSituation(situation: string, data: any): void {
     switch (situation) {
       case 'nearVirus':
-        // Handle being near a virus
+        // Lidar com estar perto de um vírus
         if (this.player.getTotalMass() > 150) {
-          // If we're big, avoid the virus
+          // Se formos grandes, evitar o vírus
           this.behaviorType = AIBehaviorType.FLEE;
           this.targetEntity = data.virus;
         } else {
-          // If we're small, we can use the virus as protection
+          // Se formos pequenos, podemos usar o vírus como proteção
           this.behaviorType = AIBehaviorType.DEFEND;
           this.targetEntity = data.virus;
         }
         break;
         
       case 'cornerTrapped':
-        // Handle being trapped in a corner
+        // Lidar com estar preso em um canto
         this.behaviorType = AIBehaviorType.FLEE;
-        // Move toward center
+        // Mover em direção ao centro
         this.wanderTarget = {
           x: this.worldSize.x / 2,
           y: this.worldSize.y / 2
@@ -957,27 +1564,27 @@ export class AIController {
         break;
         
       case 'powerUpAvailable':
-        // Go for power-up
+        // Ir para power-up
         this.behaviorType = AIBehaviorType.FEED;
         this.targetEntity = data.powerUp;
         break;
         
       case 'beingChased':
-        // Handle being chased by a larger player
+        // Lidar com ser perseguido por um jogador maior
         this.behaviorType = AIBehaviorType.FLEE;
         this.targetEntity = data.threat;
         
-        // If we're near a virus, try to use it
+        // Se estivermos perto de um vírus, tentar usá-lo
         if (data.nearbyVirus) {
           const playerPos = this.player.getAveragePosition();
           const virusPos = data.nearbyVirus.position;
           const threatPos = data.threat.position;
           
-          // Calculate direction that puts virus between us and threat
+          // Calcular direção que coloca o vírus entre nós e a ameaça
           const virusToThreat = subtract(threatPos, virusPos);
           const normalizedVirusToThreat = normalize(virusToThreat);
           
-          // Position ourselves on the opposite side of the virus
+          // Posicionar-nos no lado oposto do vírus
           const targetPos = {
             x: virusPos.x - normalizedVirusToThreat.x * 100,
             y: virusPos.y - normalizedVirusToThreat.y * 100
@@ -987,6 +1594,26 @@ export class AIController {
           this.player.setTargetDirection(normalize(direction));
           return;
         }
+        break;
+        
+      // MELHORIA: Novas situações especiais
+      case 'foodCluster':
+        // Ir para um cluster de comida
+        this.behaviorType = AIBehaviorType.FEED;
+        this.targetEntity = null;
+        this.wanderTarget = data.clusterPosition;
+        break;
+        
+      case 'teamOpportunity':
+        // Oportunidade de formar equipe
+        this.behaviorType = AIBehaviorType.TEAM_UP;
+        this.teamTarget = data.teammate;
+        break;
+        
+      case 'ambushOpportunity':
+        // Oportunidade de emboscada
+        this.behaviorType = AIBehaviorType.AMBUSH;
+        this.targetEntity = data.prey;
         break;
     }
   }

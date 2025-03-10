@@ -1,4 +1,4 @@
-// src/cell.ts - Beginning of updated file
+// src/cell.ts - Versão melhorada para física mais responsiva
 import { Cell, Vector2D, Camera } from './types';
 import { 
   generateId, 
@@ -10,7 +10,8 @@ import {
   distance,
   normalize,
   multiply,
-  subtract
+  subtract,
+  magnitude
 } from './utils';
 
 export class BaseCell implements Cell {
@@ -31,6 +32,11 @@ export class BaseCell implements Cell {
   pulseDirection: number;
   pulseSpeed: number;
   
+  // MELHORIA: Adicionar variáveis para física melhorada
+  maxSpeed: number;
+  acceleration: Vector2D;
+  damping: number;
+  
   constructor(position: Vector2D, radius: number, color: string) {
     this.id = generateId();
     this.position = { ...position };
@@ -39,14 +45,19 @@ export class BaseCell implements Cell {
     this.mass = Math.PI * radius * radius;
     this.color = color;
     
-    // Membrane properties - ensure proper initialization
+    // MELHORIA: Inicializar variáveis de física
+    this.maxSpeed = 1000; // Velocidade máxima muito maior
+    this.acceleration = { x: 0, y: 0 };
+    this.damping = 0.92; // Amortecimento para movimento mais suave
+    
+    // Propriedades da membrana - garantir inicialização adequada
     const numPoints = Math.max(10, Math.floor(radius * 0.8));
     try {
       this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
-      this.membraneTargetPoints = JSON.parse(JSON.stringify(this.membranePoints)); // Deep copy
+      this.membraneTargetPoints = JSON.parse(JSON.stringify(this.membranePoints)); // Cópia profunda
     } catch (error) {
-      console.error("Error initializing membrane points:", error);
-      // Fallback to simple points
+      console.error("Erro ao inicializar pontos da membrana:", error);
+      // Fallback para pontos simples
       this.membranePoints = [];
       this.membraneTargetPoints = [];
       for (let i = 0; i < numPoints; i++) {
@@ -60,44 +71,73 @@ export class BaseCell implements Cell {
     
     this.membraneNoiseTime = 0;
     this.membraneNoiseSpeed = 0.5;
-    // EXTREMELY REDUCED friction for near-instantaneous movement
-    this.friction = 0.001; // Almost no friction
+    // MELHORIA: Fricção EXTREMAMENTE REDUZIDA para movimento quase instantâneo
+    this.friction = 0.0005; // Reduzido ainda mais para movimento mais responsivo
     this.lastUpdateTime = Date.now();
     
-    // Visual effects
-    this.elasticity = 0.3; // How much the cell stretches when moving
+    // Efeitos visuais
+    this.elasticity = 0.3; // Quanto a célula se estica ao se mover
     this.pulseEffect = 0;
     this.pulseDirection = 1;
     this.pulseSpeed = 0.5 + Math.random() * 0.5;
   }
-  update(deltaTime: number): void {
-    // Safety check for deltaTime
-    if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
-      const now = Date.now();
-      deltaTime = (now - this.lastUpdateTime) / 1000;
-      this.lastUpdateTime = now;
-      
-      // Still need a valid deltaTime
-      if (deltaTime <= 0 || deltaTime > 1) {
-        deltaTime = 0.016; // Default to 60fps
-      }
-    } else {
-      this.lastUpdateTime = Date.now();
+  
+update(deltaTime: number): void {
+  // Verificação de segurança para deltaTime
+  if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
+    const now = Date.now();
+    deltaTime = (now - this.lastUpdateTime) / 1000;
+    this.lastUpdateTime = now;
+    
+    // Ainda precisa de um deltaTime válido
+    if (deltaTime <= 0 || deltaTime > 1) {
+      deltaTime = 0.016; // Padrão para 60fps
     }
+  } else {
+    this.lastUpdateTime = Date.now();
+  }
+  
+  // CORREÇÃO: Reduzir ainda mais a fricção para movimento mais responsivo
+  this.friction = 0.0001; // Quase sem fricção
+  
+  // Aplicar aceleração à velocidade
+  this.velocity.x += this.acceleration.x * deltaTime;
+  this.velocity.y += this.acceleration.y * deltaTime;
+  
+  // Aplicar amortecimento para movimento mais suave
+  this.velocity.x *= this.damping || 0.98;
+  this.velocity.y *= this.damping || 0.98;
+  
+  // Aplicar fricção mínima para movimento responsivo
+  this.velocity.x *= (1 - this.friction * deltaTime);
+  this.velocity.y *= (1 - this.friction * deltaTime);
+  
+  // CORREÇÃO: Aumentar a velocidade máxima
+  const maxSpeed = 10000 / (this.radius * 0.5);
+  
+  // Calcular velocidade atual
+  const currentSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
+  
+  // Se a velocidade exceder o máximo, reduzi-la
+  if (currentSpeed > maxSpeed) {
+    const scale = maxSpeed / currentSpeed;
+    this.velocity.x *= scale;
+    this.velocity.y *= scale;
+  }
+  
+  // Atualizar posição
+  this.position.x += this.velocity.x * deltaTime;
+  this.position.y += this.velocity.y * deltaTime;
+  
+  // Validar posição para evitar NaN
+  const defaultPos = { x: 0, y: 0 };
+  this.position = validatePosition(this.position, defaultPos);
+  
+  // Redefinir aceleração
+  this.acceleration = { x: 0, y: 0 };
+  
     
-    // Apply minimal friction for responsive movement
-    this.velocity.x *= (1 - this.friction * deltaTime);
-    this.velocity.y *= (1 - this.friction * deltaTime);
-    
-    // Update position
-    this.position.x += this.velocity.x * deltaTime;
-    this.position.y += this.velocity.y * deltaTime;
-    
-    // Validate position to prevent NaN
-    const defaultPos = { x: 0, y: 0 };
-    this.position = validatePosition(this.position, defaultPos);
-    
-    // Update membrane - ensure membranePoints and membraneTargetPoints are initialized
+    // Atualizar membrana - garantir que membranePoints e membraneTargetPoints estejam inicializados
     if (!this.membranePoints || !this.membraneTargetPoints || 
         !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
       const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
@@ -108,12 +148,12 @@ export class BaseCell implements Cell {
     this.membraneNoiseTime += deltaTime * this.membraneNoiseSpeed;
     this.updateMembranePoints();
     
-    // Update pulse effect
+    // Atualizar efeito de pulso
     this.updatePulseEffect(deltaTime);
   }
   
   updatePulseEffect(deltaTime: number): void {
-    // Update pulse animation
+    // Atualizar animação de pulso
     this.pulseEffect += this.pulseDirection * this.pulseSpeed * deltaTime;
     
     if (this.pulseEffect > 1) {
@@ -126,7 +166,7 @@ export class BaseCell implements Cell {
   }
   
   updateMembranePoints(): void {
-    // Safety check for membrane points
+    // Verificação de segurança para pontos da membrana
     if (!this.membranePoints || !this.membraneTargetPoints || 
         !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
       const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
@@ -137,11 +177,12 @@ export class BaseCell implements Cell {
     
     const numPoints = this.membranePoints.length;
     
-    // Calculate velocity magnitude for stretching effect
+    // Calcular magnitude da velocidade para efeito de estiramento
     const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
-    const stretchFactor = Math.min(0.3, speed * 0.001); // Cap stretching
+    // MELHORIA: Aumentar fator de estiramento para feedback visual melhor
+    const stretchFactor = Math.min(0.5, speed * 0.002); // Aumentado para feedback visual melhor
     
-    // Calculate stretch direction
+    // Calcular direção de estiramento
     let stretchX = 0;
     let stretchY = 0;
     
@@ -150,20 +191,20 @@ export class BaseCell implements Cell {
       stretchY = this.velocity.y / speed;
     }
     
-    // Generate new target points with noise and stretching
+    // Gerar novos pontos alvo com ruído e estiramento
     for (let i = 0; i < numPoints; i++) {
       const angle = (i / numPoints) * Math.PI * 2;
       
-      // Basic noise effect
+      // Efeito de ruído básico
       const noise = Math.sin(angle * 3 + this.membraneNoiseTime) * 0.1 + 0.9;
       
-      // Pulse effect
+      // Efeito de pulso
       const pulseNoise = 1 + (this.pulseEffect * 0.05);
       
-      // Stretching effect based on velocity
+      // Efeito de estiramento baseado na velocidade
       const stretch = 1 + stretchFactor * Math.cos(angle - Math.atan2(stretchY, stretchX)) * this.elasticity;
       
-      // Combine effects
+      // Combinar efeitos
       const totalEffect = noise * pulseNoise * stretch;
       
       const x = this.position.x + Math.cos(angle) * this.radius * totalEffect;
@@ -172,19 +213,19 @@ export class BaseCell implements Cell {
       this.membraneTargetPoints[i] = { x, y };
     }
     
-    // IMPROVED: More responsive membrane updates
-    // Increase interpolation factor for faster membrane response
+    // MELHORIA: Atualizações de membrana mais responsivas
+    // Aumentar fator de interpolação para resposta mais rápida da membrana
     for (let i = 0; i < numPoints; i++) {
       this.membranePoints[i] = lerpVector(
         this.membranePoints[i],
         this.membraneTargetPoints[i],
-        0.3 // Increased from 0.1 to 0.3 for faster response
+        0.5 // Aumentado de 0.3 para 0.5 para resposta mais rápida
       );
     }
   }
   
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // Safety check for camera
+    // Verificação de segurança para câmera
     if (!camera || !camera.isInView) {
       return;
     }
@@ -194,12 +235,12 @@ export class BaseCell implements Cell {
     const screenPos = camera.worldToScreen(this.position);
     const screenRadius = this.radius * camera.scale;
     
-    // Draw cell membrane (outer edge)
+    // Desenhar membrana da célula (borda externa)
     ctx.beginPath();
     
-    // Safety check for membrane points
+    // Verificação de segurança para pontos da membrana
     if (!this.membranePoints || this.membranePoints.length === 0) {
-      // Fallback to simple circle if membrane points are missing
+      // Fallback para círculo simples se os pontos da membrana estiverem faltando
       ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
     } else {
       const screenMembranePoints = this.membranePoints.map(p => camera.worldToScreen(p));
@@ -211,7 +252,7 @@ export class BaseCell implements Cell {
       ctx.closePath();
     }
     
-    // Fill with gradient
+    // Preencher com gradiente
     try {
       const gradient = ctx.createRadialGradient(
         screenPos.x, screenPos.y, 0,
@@ -222,20 +263,20 @@ export class BaseCell implements Cell {
       
       ctx.fillStyle = gradient;
     } catch (error) {
-      // Fallback to solid color if gradient fails
+      // Fallback para cor sólida se o gradiente falhar
       ctx.fillStyle = this.color;
     }
     
     ctx.fill();
     
-    // Draw cell nucleus
+    // Desenhar núcleo da célula
     const nucleusRadius = screenRadius * 0.4;
     ctx.beginPath();
     ctx.arc(screenPos.x, screenPos.y, nucleusRadius, 0, Math.PI * 2);
     ctx.fillStyle = this.adjustColor(this.color, -50);
     ctx.fill();
     
-    // Draw nucleus highlight
+    // Desenhar destaque do núcleo
     ctx.beginPath();
     ctx.arc(
       screenPos.x - nucleusRadius * 0.2,
@@ -246,28 +287,29 @@ export class BaseCell implements Cell {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.fill();
     
-    // Draw inner details (organelles)
+    // Desenhar detalhes internos (organelas)
     this.drawCellDetails(ctx, screenPos, screenRadius);
     
-    // Add trail effect for fast-moving cells
-    if (Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y) > 100) {
+    // MELHORIA: Adicionar efeito de rastro para células em movimento rápido
+    // Aumentar o limite de velocidade para mostrar o rastro
+    if (Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y) > 80) {
       this.addTrailEffect(ctx, camera);
     }
   }
   
   drawCellDetails(ctx: CanvasRenderingContext2D, screenPos: Vector2D, screenRadius: number): void {
-    // Draw small organelles inside the cell
+    // Desenhar pequenas organelas dentro da célula
     const organelleCount = Math.floor(this.radius / 10);
     
     for (let i = 0; i < organelleCount; i++) {
-      // Random position within the cell
+      // Posição aleatória dentro da célula
       const angle = Math.random() * Math.PI * 2;
       const distance = Math.random() * screenRadius * 0.6;
       
       const x = screenPos.x + Math.cos(angle) * distance;
       const y = screenPos.y + Math.sin(angle) * distance;
       
-      // Draw organelle
+      // Desenhar organela
       ctx.beginPath();
       ctx.arc(x, y, screenRadius * 0.05, 0, Math.PI * 2);
       ctx.fillStyle = this.adjustColor(this.color, -20);
@@ -275,54 +317,44 @@ export class BaseCell implements Cell {
     }
   }
   
-  applyForce(force: Vector2D): void {
-    // Safety check for force
-    if (!force || typeof force.x !== 'number' || typeof force.y !== 'number') {
-      return;
-    }
-    
-    // F = ma, but we'll simplify by dividing by mass
-    const acceleration = {
-      x: force.x / this.mass,
-      y: force.y / this.mass
-    };
-    
-    this.velocity.x += acceleration.x;
-    this.velocity.y += acceleration.y;
-    
-    // EXTREMELY INCREASED maximum velocity for near-instantaneous movement
-    // Increased to a very high value for responsive gameplay
-    const maxSpeed = 5000 / (this.radius * 0.5);
-    
-    // Calculate current speed
-    const currentSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
-    
-    // If speed exceeds max, scale it down
-    if (currentSpeed > maxSpeed) {
-      const scale = maxSpeed / currentSpeed;
-      this.velocity.x *= scale;
-      this.velocity.y *= scale;
-    }
+applyForce(force: Vector2D): void {
+  // Verificação de segurança para força
+  if (!force || typeof force.x !== 'number' || typeof force.y !== 'number') {
+    return;
   }
-  // Apply a repulsion force from another cell or object
+  
+  // CORREÇÃO: Garantir que a aceleração seja inicializada
+  if (!this.acceleration) {
+    this.acceleration = { x: 0, y: 0 };
+  }
+  
+  // F = ma, mas simplificaremos dividindo pela massa
+  // CORREÇÃO: Aumentar o efeito da força para garantir movimento
+  const massEffect = Math.min(1, 100 / this.mass); // Reduzir o efeito da massa para células grandes
+  this.acceleration.x += force.x * massEffect;
+  this.acceleration.y += force.y * massEffect;
+}
+  
+  // Aplicar uma força de repulsão de outra célula ou objeto
   applyRepulsion(otherPos: Vector2D, strength: number = 1): void {
     const direction = subtract(this.position, otherPos);
     const dist = distance(this.position, otherPos);
     
-    // Avoid division by zero
+    // Evitar divisão por zero
     if (dist < 0.1) return;
     
-    // Calculate repulsion force (stronger when closer)
-    const forceMagnitude = strength * (1 / dist);
+    // MELHORIA: Aumentar força de repulsão para evitar sobreposição
+    // Calcular força de repulsão (mais forte quando mais próximo)
+    const forceMagnitude = strength * (1 / dist) * 2; // Multiplicado por 2 para repulsão mais forte
     const force = multiply(normalize(direction), forceMagnitude);
     
     this.applyForce(force);
   }
   
-  // Helper to darken/lighten a color
+  // Auxiliar para escurecer/clarear uma cor
   adjustColor(color: string, amount: number): string {
     try {
-      // For HSL colors
+      // Para cores HSL
       if (color.startsWith('hsl')) {
         const match = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
         if (match) {
@@ -333,58 +365,58 @@ export class BaseCell implements Cell {
         }
       }
       
-      // For hex colors
+      // Para cores hex
       if (color.startsWith('#')) {
-        // Convert hex to rgb
+        // Converter hex para rgb
         const r = parseInt(color.slice(1, 3), 16);
         const g = parseInt(color.slice(3, 5), 16);
         const b = parseInt(color.slice(5, 7), 16);
         
-        // Adjust rgb values
+        // Ajustar valores rgb
         const newR = Math.max(0, Math.min(255, r + amount));
         const newG = Math.max(0, Math.min(255, g + amount));
         const newB = Math.max(0, Math.min(255, b + amount));
         
-        // Convert back to hex
+        // Converter de volta para hex
         return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
       }
       
-      // Fallback for other color formats
+      // Fallback para outros formatos de cor
       return color;
     } catch (error) {
-      // Return original color if adjustment fails
+      // Retornar cor original se o ajuste falhar
       return color;
     }
   }
   
-  // Add a trail effect behind the cell when moving fast
+  // MELHORIA: Efeito de rastro melhorado para células em movimento rápido
   addTrailEffect(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // Only add trail if moving fast enough
+    // Só adicionar rastro se estiver se movendo rápido o suficiente
     const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
-    if (speed < 100) return;
+    if (speed < 80) return;
     
-    // Calculate trail points
-    const trailLength = this.radius * 2;
+    // Calcular pontos do rastro
+    const trailLength = this.radius * 3; // Aumentado para rastro mais longo
     const direction = normalize(this.velocity);
     
-    // Trail start position (behind the cell)
+    // Posição inicial do rastro (atrás da célula)
     const trailStart = {
       x: this.position.x - direction.x * trailLength,
       y: this.position.y - direction.y * trailLength
     };
     
-    // Convert to screen coordinates
+    // Converter para coordenadas da tela
     const screenPos = camera.worldToScreen(this.position);
     const screenTrailStart = camera.worldToScreen(trailStart);
     
-    // Draw trail
+    // Desenhar rastro
     const gradient = ctx.createLinearGradient(
       screenTrailStart.x, screenTrailStart.y,
       screenPos.x, screenPos.y
     );
     
     gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
-    gradient.addColorStop(1, `${this.color}80`); // 50% opacity
+    gradient.addColorStop(1, `${this.color}80`); // 50% de opacidade
     
     ctx.beginPath();
     ctx.moveTo(screenTrailStart.x, screenTrailStart.y);
@@ -393,18 +425,39 @@ export class BaseCell implements Cell {
     ctx.strokeStyle = gradient;
     ctx.lineCap = 'round';
     ctx.stroke();
+    
+    // MELHORIA: Adicionar partículas de rastro para movimento mais rápido
+    if (speed > 200) {
+      // Adicionar algumas partículas ao longo do rastro
+      const particleCount = Math.min(5, Math.floor(speed / 100));
+      
+      for (let i = 0; i < particleCount; i++) {
+        const t = Math.random();
+        const particlePos = {
+          x: screenTrailStart.x + (screenPos.x - screenTrailStart.x) * t,
+          y: screenTrailStart.y + (screenPos.y - screenTrailStart.y) * t
+        };
+        
+        const particleSize = (this.radius * camera.scale * 0.2) * Math.random();
+        
+        ctx.beginPath();
+        ctx.arc(particlePos.x, particlePos.y, particleSize, 0, Math.PI * 2);
+        ctx.fillStyle = `${this.color}40`; // 25% de opacidade
+        ctx.fill();
+      }
+    }
   }
   
-  // Add a glow effect to the cell (for power-ups or special states)
+  // Adicionar um efeito de brilho à célula (para power-ups ou estados especiais)
   addGlowEffect(ctx: CanvasRenderingContext2D, screenPos: Vector2D, screenRadius: number, color: string, intensity: number = 0.5): void {
-    // Create a glow effect around the cell
+    // Criar um efeito de brilho ao redor da célula
     const glowSize = screenRadius * 1.5;
     const gradient = ctx.createRadialGradient(
       screenPos.x, screenPos.y, screenRadius * 0.8,
       screenPos.x, screenPos.y, glowSize
     );
     
-    // Make the glow fade out from the cell edge
+    // Fazer o brilho desaparecer a partir da borda da célula
     gradient.addColorStop(0, `${color}${Math.floor(intensity * 99).toString(16)}`);
     gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
     
@@ -414,16 +467,16 @@ export class BaseCell implements Cell {
     ctx.fill();
   }
   
-  // Add a ripple effect when the cell changes size dramatically
+  // Adicionar um efeito de ondulação quando a célula muda de tamanho drasticamente
   addRippleEffect(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // This would be called when the cell grows or shrinks significantly
+    // Isso seria chamado quando a célula cresce ou encolhe significativamente
     const screenPos = camera.worldToScreen(this.position);
     const screenRadius = this.radius * camera.scale;
     
-    // Draw ripple circles
+    // Desenhar círculos de ondulação
     for (let i = 1; i <= 3; i++) {
       const rippleRadius = screenRadius * (1 + i * 0.2);
-      const opacity = 0.5 - i * 0.15; // Fade out as ripples expand
+      const opacity = 0.5 - i * 0.15; // Desaparecer à medida que as ondulações se expandem
       
       ctx.beginPath();
       ctx.arc(screenPos.x, screenPos.y, rippleRadius, 0, Math.PI * 2);
@@ -433,19 +486,70 @@ export class BaseCell implements Cell {
     }
   }
   
-  // Add a pulsating effect to highlight the cell
+  // Adicionar um efeito pulsante para destacar a célula
   addPulseHighlight(ctx: CanvasRenderingContext2D, camera: Camera, color: string = '#ffffff'): void {
     const screenPos = camera.worldToScreen(this.position);
     const baseRadius = this.radius * camera.scale;
     
-    // Calculate pulse size based on pulse effect
+    // Calcular tamanho do pulso com base no efeito de pulso
     const pulseRadius = baseRadius * (1 + this.pulseEffect * 0.2);
     
-    // Draw pulsating ring
+    // Desenhar anel pulsante
     ctx.beginPath();
     ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
     ctx.strokeStyle = `${color}${Math.floor((1 - this.pulseEffect) * 99).toString(16)}`;
     ctx.lineWidth = 3;
     ctx.stroke();
+  }
+  
+  // MELHORIA: Adicionar método para aplicar impulso instantâneo
+  applyImpulse(direction: Vector2D, strength: number): void {
+    if (!direction || typeof direction.x !== 'number' || typeof direction.y !== 'number') {
+      return;
+    }
+    
+    // Normalizar direção
+    const mag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+    if (mag > 0) {
+      direction = {
+        x: direction.x / mag,
+        y: direction.y / mag
+      };
+    } else {
+      return;
+    }
+    
+    // Aplicar impulso diretamente à velocidade
+    this.velocity.x += direction.x * strength;
+    this.velocity.y += direction.y * strength;
+  }
+  
+  // MELHORIA: Adicionar método para movimento mais suave
+  moveToward(target: Vector2D, speed: number, deltaTime: number): void {
+    if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
+      return;
+    }
+    
+    // Calcular direção para o alvo
+    const direction = subtract(target, this.position);
+    const dist = magnitude(direction);
+    
+    // Se já estiver no alvo, não fazer nada
+    if (dist < 1) return;
+    
+    // Normalizar direção
+    const normalizedDir = {
+      x: direction.x / dist,
+      y: direction.y / dist
+    };
+    
+    // Calcular força com base na distância (mais forte quando mais longe)
+    const forceMagnitude = Math.min(speed * 10, speed * (dist / 10));
+    
+    // Aplicar força
+    this.applyForce({
+      x: normalizedDir.x * forceMagnitude,
+      y: normalizedDir.y * forceMagnitude
+    });
   }
 }

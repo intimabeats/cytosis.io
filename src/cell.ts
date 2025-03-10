@@ -44,17 +44,20 @@ export class BaseCell implements Cell {
     this.radius = radius;
     this.mass = Math.PI * radius * radius;
     this.color = color;
-    
+
     // MELHORIA: Inicializar variáveis de física
     this.maxSpeed = 1000; // Velocidade máxima muito maior
     this.acceleration = { x: 0, y: 0 };
     this.damping = 0.92; // Amortecimento para movimento mais suave
-    
+
     // Propriedades da membrana - garantir inicialização adequada
     const numPoints = Math.max(10, Math.floor(radius * 0.8));
     try {
       this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
       this.membraneTargetPoints = JSON.parse(JSON.stringify(this.membranePoints)); // Cópia profunda
+        //LOGS
+        console.log("BaseCell constructor - membranePoints:", this.membranePoints);
+        console.log("BaseCell constructor - membraneTargetPoints:", this.membraneTargetPoints);
     } catch (error) {
       console.error("Erro ao inicializar pontos da membrana:", error);
       // Fallback para pontos simples
@@ -68,13 +71,13 @@ export class BaseCell implements Cell {
         this.membraneTargetPoints.push({ x, y });
       }
     }
-    
+
     this.membraneNoiseTime = 0;
     this.membraneNoiseSpeed = 0.5;
     // MELHORIA: Fricção EXTREMAMENTE REDUZIDA para movimento quase instantâneo
     this.friction = 0.0005; // Reduzido ainda mais para movimento mais responsivo
     this.lastUpdateTime = Date.now();
-    
+
     // Efeitos visuais
     this.elasticity = 0.3; // Quanto a célula se estica ao se mover
     this.pulseEffect = 0;
@@ -82,76 +85,96 @@ export class BaseCell implements Cell {
     this.pulseSpeed = 0.5 + Math.random() * 0.5;
   }
   
+
 update(deltaTime: number): void {
-  // Verificação de segurança para deltaTime
-  if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
-    const now = Date.now();
-    deltaTime = (now - this.lastUpdateTime) / 1000;
-    this.lastUpdateTime = now;
-    
-    // Ainda precisa de um deltaTime válido
-    if (deltaTime <= 0 || deltaTime > 1) {
-      deltaTime = 0.016; // Padrão para 60fps
+    // Verificação de segurança para deltaTime
+    if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
+        const now = Date.now();
+        deltaTime = (now - this.lastUpdateTime) / 1000;
+        this.lastUpdateTime = now;
+
+        // Ainda precisa de um deltaTime válido
+        if (deltaTime <= 0 || deltaTime > 1) {
+            deltaTime = 0.016; // Padrão para 60fps
+        }
+    } else {
+        this.lastUpdateTime = Date.now();
     }
-  } else {
-    this.lastUpdateTime = Date.now();
-  }
-  
-  // CORREÇÃO: Reduzir ainda mais a fricção para movimento mais responsivo
-  this.friction = 0.0001; // Quase sem fricção
-  
-  // Aplicar aceleração à velocidade
-  this.velocity.x += this.acceleration.x * deltaTime;
-  this.velocity.y += this.acceleration.y * deltaTime;
-  
-  // Aplicar amortecimento para movimento mais suave
-  this.velocity.x *= this.damping || 0.98;
-  this.velocity.y *= this.damping || 0.98;
-  
-  // Aplicar fricção mínima para movimento responsivo
-  this.velocity.x *= (1 - this.friction * deltaTime);
-  this.velocity.y *= (1 - this.friction * deltaTime);
-  
-  // CORREÇÃO: Aumentar a velocidade máxima
-  const maxSpeed = 10000 / (this.radius * 0.5);
-  
-  // Calcular velocidade atual
-  const currentSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
-  
-  // Se a velocidade exceder o máximo, reduzi-la
-  if (currentSpeed > maxSpeed) {
-    const scale = maxSpeed / currentSpeed;
-    this.velocity.x *= scale;
-    this.velocity.y *= scale;
-  }
-  
-  // Atualizar posição
-  this.position.x += this.velocity.x * deltaTime;
-  this.position.y += this.velocity.y * deltaTime;
-  
-  // Validar posição para evitar NaN
-  const defaultPos = { x: 0, y: 0 };
-  this.position = validatePosition(this.position, defaultPos);
-  
-  // Redefinir aceleração
-  this.acceleration = { x: 0, y: 0 };
-  
-    
+
+    // Fricção e Amortecimento (mantidos baixos)
+    this.friction = 0.0001; // Quase sem fricção
+    this.velocity.x += this.acceleration.x * deltaTime;
+    this.velocity.y += this.acceleration.y * deltaTime;
+    this.velocity.x *= this.damping || 0.98;
+    this.velocity.y *= this.damping || 0.98;
+    this.velocity.x *= (1 - this.friction * deltaTime);
+    this.velocity.y *= (1 - this.friction * deltaTime);
+
+    // NOVO: Velocidade máxima e mínima fixas (ajuste esses valores)
+    const minSpeed = 200;  // Velocidade mínima absoluta
+    const maxSpeed = 400; // Velocidade máxima absoluta
+
+    // Limitar a velocidade
+    const currentSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
+    if (currentSpeed > maxSpeed) {
+        const scale = maxSpeed / currentSpeed;
+        this.velocity.x *= scale;
+        this.velocity.y *= scale;
+    } else if (currentSpeed < minSpeed) {
+        // Aumentar a velocidade se estiver abaixo da mínima (e se movendo)
+        if (currentSpeed > 0) { // Evita divisão por zero
+            const scale = minSpeed / currentSpeed;
+            this.velocity.x *= scale;
+            this.velocity.y *= scale;
+        }
+    }
+
+    // Redefinir aceleração ANTES de atualizar a posição e a membrana
+    this.acceleration = { x: 0, y: 0 };
+
+    // Atualizar posição (mantido)
+    this.position.x += this.velocity.x * deltaTime;
+    this.position.y += this.velocity.y * deltaTime;
+
+    // Validar posição (mantido)
+    const defaultPos = { x: 0, y: 0 };
+    this.position = validatePosition(this.position, defaultPos);   
+
     // Atualizar membrana - garantir que membranePoints e membraneTargetPoints estejam inicializados
-    if (!this.membranePoints || !this.membraneTargetPoints || 
+    if (!this.membranePoints || !this.membraneTargetPoints ||
         !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
-      const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
-      this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
-      this.membraneTargetPoints = [...this.membranePoints];
+        const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
+        this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
+        this.membraneTargetPoints = [...this.membranePoints];
     }
-    
+
     this.membraneNoiseTime += deltaTime * this.membraneNoiseSpeed;
     this.updateMembranePoints();
-    
+
     // Atualizar efeito de pulso
     this.updatePulseEffect(deltaTime);
+}
+
+
+applyForce(force: Vector2D): void {
+    // Verificação de segurança para força
+    if (!force || typeof force.x !== 'number' || typeof force.y !== 'number') {
+      return;
+    }
+
+    // CORREÇÃO: Garantir que a aceleração seja inicializada
+    if (!this.acceleration) {
+      this.acceleration = { x: 0, y: 0 };
+    }
+
+    // F = ma, mas simplificaremos dividindo pela massa
+    // CORREÇÃO: Aumentar o efeito da força para garantir movimento
+    const massEffect = Math.min(1, 100 / this.mass); // Reduzir o efeito da massa para células grandes
+    this.acceleration.x += force.x * massEffect;
+    this.acceleration.y += force.y * massEffect;
   }
-  
+   
+	
   updatePulseEffect(deltaTime: number): void {
     // Atualizar animação de pulso
     this.pulseEffect += this.pulseDirection * this.pulseSpeed * deltaTime;
@@ -167,62 +190,70 @@ update(deltaTime: number): void {
   
   updateMembranePoints(): void {
     // Verificação de segurança para pontos da membrana
-    if (!this.membranePoints || !this.membraneTargetPoints || 
+    if (!this.membranePoints || !this.membraneTargetPoints ||
         !Array.isArray(this.membranePoints) || !Array.isArray(this.membraneTargetPoints)) {
       const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
       this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
       this.membraneTargetPoints = [...this.membranePoints];
       return;
     }
-    
+
     const numPoints = this.membranePoints.length;
-    
+
     // Calcular magnitude da velocidade para efeito de estiramento
     const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
     // MELHORIA: Aumentar fator de estiramento para feedback visual melhor
     const stretchFactor = Math.min(0.5, speed * 0.002); // Aumentado para feedback visual melhor
-    
+
     // Calcular direção de estiramento
     let stretchX = 0;
     let stretchY = 0;
-    
+
     if (speed > 0) {
       stretchX = this.velocity.x / speed;
       stretchY = this.velocity.y / speed;
     }
-    
-    // Gerar novos pontos alvo com ruído e estiramento
+
+    // Gerar NOVOS pontos alvo com base na posição ATUALIZADA
+    const newTargetPoints: Vector2D[] = [];
     for (let i = 0; i < numPoints; i++) {
-      const angle = (i / numPoints) * Math.PI * 2;
-      
-      // Efeito de ruído básico
-      const noise = Math.sin(angle * 3 + this.membraneNoiseTime) * 0.1 + 0.9;
-      
-      // Efeito de pulso
-      const pulseNoise = 1 + (this.pulseEffect * 0.05);
-      
-      // Efeito de estiramento baseado na velocidade
-      const stretch = 1 + stretchFactor * Math.cos(angle - Math.atan2(stretchY, stretchX)) * this.elasticity;
-      
-      // Combinar efeitos
-      const totalEffect = noise * pulseNoise * stretch;
-      
-      const x = this.position.x + Math.cos(angle) * this.radius * totalEffect;
-      const y = this.position.y + Math.sin(angle) * this.radius * totalEffect;
-      
-      this.membraneTargetPoints[i] = { x, y };
+        const angle = (i / numPoints) * Math.PI * 2;
+
+        // Efeito de ruído básico
+        const noise = Math.sin(angle * 3 + this.membraneNoiseTime) * 0.1 + 0.9;
+
+        // Efeito de pulso
+        const pulseNoise = 1 + (this.pulseEffect * 0.05);
+
+        // Efeito de estiramento baseado na velocidade
+        const stretch = 1 + stretchFactor * Math.cos(angle - Math.atan2(stretchY, stretchX)) * this.elasticity;
+
+        // Combinar efeitos
+        const totalEffect = noise * pulseNoise * stretch;
+
+        // Usar a posição ATUALIZADA da célula
+        const x = this.position.x + Math.cos(angle) * this.radius * totalEffect;
+        const y = this.position.y + Math.sin(angle) * this.radius * totalEffect;
+
+        newTargetPoints.push({ x, y });
     }
-    
-    // MELHORIA: Atualizações de membrana mais responsivas
-    // Aumentar fator de interpolação para resposta mais rápida da membrana
+
+
+    // Interpolar entre os pontos ATUAIS e os NOVOS pontos alvo
     for (let i = 0; i < numPoints; i++) {
       this.membranePoints[i] = lerpVector(
         this.membranePoints[i],
-        this.membraneTargetPoints[i],
+        newTargetPoints[i], // Usar os novos pontos alvo
         0.5 // Aumentado de 0.3 para 0.5 para resposta mais rápida
       );
     }
-  }
+
+    // Atualizar membraneTargetPoints para os novos pontos alvo.  Isso é importante
+    // para que, no próximo quadro, a interpolação comece a partir do ponto correto.
+    this.membraneTargetPoints = newTargetPoints;
+    console.log("updateMembranePoints - membranePoints (após interpolação):", this.membranePoints); // LOG
+}
+
   
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
     // Verificação de segurança para câmera
@@ -390,34 +421,36 @@ applyForce(force: Vector2D): void {
   }
   
   // MELHORIA: Efeito de rastro melhorado para células em movimento rápido
-  addTrailEffect(ctx: CanvasRenderingContext2D, camera: Camera): void {
+   addTrailEffect(ctx: CanvasRenderingContext2D, camera: Camera): void {
     // Só adicionar rastro se estiver se movendo rápido o suficiente
     const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
     if (speed < 80) return;
-    
+
     // Calcular pontos do rastro
     const trailLength = this.radius * 3; // Aumentado para rastro mais longo
     const direction = normalize(this.velocity);
-    
+
     // Posição inicial do rastro (atrás da célula)
     const trailStart = {
       x: this.position.x - direction.x * trailLength,
       y: this.position.y - direction.y * trailLength
     };
-    
+
     // Converter para coordenadas da tela
     const screenPos = camera.worldToScreen(this.position);
     const screenTrailStart = camera.worldToScreen(trailStart);
-    
+
     // Desenhar rastro
     const gradient = ctx.createLinearGradient(
       screenTrailStart.x, screenTrailStart.y,
       screenPos.x, screenPos.y
     );
-    
+
     gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
-    gradient.addColorStop(1, `${this.color}80`); // 50% de opacidade
-    
+    // CORREÇÃO: Usar hsla() para adicionar transparência
+    gradient.addColorStop(1, this.color.replace('hsl', 'hsla').replace(')', ', 0.5)')); // 50% de opacidade
+
+
     ctx.beginPath();
     ctx.moveTo(screenTrailStart.x, screenTrailStart.y);
     ctx.lineTo(screenPos.x, screenPos.y);
@@ -425,24 +458,24 @@ applyForce(force: Vector2D): void {
     ctx.strokeStyle = gradient;
     ctx.lineCap = 'round';
     ctx.stroke();
-    
+
     // MELHORIA: Adicionar partículas de rastro para movimento mais rápido
     if (speed > 200) {
       // Adicionar algumas partículas ao longo do rastro
       const particleCount = Math.min(5, Math.floor(speed / 100));
-      
+
       for (let i = 0; i < particleCount; i++) {
         const t = Math.random();
         const particlePos = {
           x: screenTrailStart.x + (screenPos.x - screenTrailStart.x) * t,
           y: screenTrailStart.y + (screenPos.y - screenTrailStart.y) * t
         };
-        
+
         const particleSize = (this.radius * camera.scale * 0.2) * Math.random();
-        
+
         ctx.beginPath();
         ctx.arc(particlePos.x, particlePos.y, particleSize, 0, Math.PI * 2);
-        ctx.fillStyle = `${this.color}40`; // 25% de opacidade
+        ctx.fillStyle = `${this.color}40`; // 25% de opacidade //CORRIGIR ISSO TBM
         ctx.fill();
       }
     }

@@ -96,18 +96,18 @@ export class PlayerCell extends BaseCell implements PlayerCell {
         const numPoints = Math.max(10, Math.floor(this.radius * 0.8));
         this.membranePoints = generateMembranePoints(this.position, this.radius, numPoints);
       }
-      
+
       if (!this.membraneTargetPoints || !Array.isArray(this.membraneTargetPoints)) {
         this.membraneTargetPoints = [...this.membranePoints];
       }
-      
+
       // Chamar método de renderização pai
       super.render(ctx, camera);
-      
+
       // NOVO: Renderizar nome do jogador acima de cada célula individual
       const screenPos = camera.worldToScreen(this.position);
       const screenRadius = this.radius * camera.scale;
-      
+
       // Ajustar tamanho da fonte com base no tamanho da célula
       const fontSize = Math.max(10, Math.min(16, screenRadius * 0.3));
       ctx.font = `bold ${fontSize}px Rajdhani`;
@@ -115,9 +115,10 @@ export class PlayerCell extends BaseCell implements PlayerCell {
       ctx.strokeStyle = 'black';
       ctx.lineWidth = 2;
       ctx.textAlign = 'center';
-      ctx.strokeText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
-      ctx.fillText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
-      
+      //Comentando a parte que renderiza o nome
+      //ctx.strokeText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
+      //ctx.fillText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
+
       // Se esta célula ainda não puder se fundir, mostrar um indicador de temporizador
       if (!this.canMerge && this.mergeTime > 0) {
         // Desenhar temporizador de fusão como um contorno de círculo
@@ -126,15 +127,15 @@ export class PlayerCell extends BaseCell implements PlayerCell {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = 2;
         ctx.stroke();
-        
+
         // Desenhar arco de progresso
         const progress = this.mergeTime / 10; // Assumindo 10 segundos de tempo de fusão
         ctx.beginPath();
         ctx.arc(
-          screenPos.x, 
-          screenPos.y, 
-          screenRadius * 1.1, 
-          -Math.PI / 2, 
+          screenPos.x,
+          screenPos.y,
+          screenRadius * 1.1,
+          -Math.PI / 2,
           -Math.PI / 2 + (1 - progress) * Math.PI * 2
         );
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
@@ -142,23 +143,23 @@ export class PlayerCell extends BaseCell implements PlayerCell {
       }
     } catch (error) {
       console.error("Erro na renderização da PlayerCell:", error);
-      
+
       // Renderização de fallback se os pontos de membrana falharem
       if (camera.isInView(this.position, this.radius)) {
         const screenPos = camera.worldToScreen(this.position);
         const screenRadius = this.radius * camera.scale;
-        
+
         // Desenhar círculo simples
         ctx.beginPath();
         ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
         ctx.fill();
-        
+
         // Desenhar contorno
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.lineWidth = 2;
         ctx.stroke();
-        
+
         // Ainda renderizar o nome
         const fontSize = Math.max(10, Math.min(16, screenRadius * 0.3));
         ctx.font = `bold ${fontSize}px Rajdhani`;
@@ -166,8 +167,9 @@ export class PlayerCell extends BaseCell implements PlayerCell {
         ctx.strokeStyle = 'black';
         ctx.lineWidth = 2;
         ctx.textAlign = 'center';
-        ctx.strokeText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
-        ctx.fillText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
+        //Comentando a parte que renderiza o nome
+        //ctx.strokeText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
+        //ctx.fillText(this.playerName, screenPos.x, screenPos.y - screenRadius - 5);
       }
     }
   }
@@ -278,162 +280,125 @@ export class GamePlayer implements Player {
   }
   
 update(deltaTime: number): void {
-  // Verificação de segurança para deltaTime
-  if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
-    deltaTime = 0.016; // Padrão para 60fps
-  }
-  
-  // CORREÇÃO: Verificar se o mouse está no centro para fusão automática
-  if (this.isMouseInCenter && this.cells.length > 1) {
-    this.shouldMoveToCenter = true;
-  } else {
-    this.shouldMoveToCenter = false;
-  }
-  
-  // Atualizar todas as células
-  for (let i = this.cells.length - 1; i >= 0; i--) {
-    const cell = this.cells[i];
-    
-    try {
-      cell.update(deltaTime);
-      
-      // CORREÇÃO: Garantir que o movimento seja aplicado sempre
-      if (!this.isAI) {
-        let targetPos: Vector2D;
-        let direction: Vector2D;
-        
-        if (this.shouldMoveToCenter) {
-          // Se o mouse está no centro e temos múltiplas células, mover em direção ao centro
-          const avgPos = this.getAveragePosition();
-          targetPos = avgPos;
-          direction = subtract(targetPos, cell.position);
-        } else {
-          // Caso contrário, mover em direção ao mouse
-          targetPos = this.mousePosition;
-          direction = subtract(targetPos, cell.position);
-        }
-        
-        // Normalizar direção
-        const dirMag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
-        if (dirMag > 0) {
-          direction.x /= dirMag;
-          direction.y /= dirMag;
-        } else {
-          // Se não houver direção (estamos exatamente no alvo), não aplicar força
-          continue;
-        }
-        
-        // CORREÇÃO: Sempre aplicar uma força mínima para garantir movimento contínuo
-        let speedMultiplier = 1;
-        if (this.hasEffect(PowerUpType.SPEED)) {
-          speedMultiplier = 2.0;
-        }
-        
-        // ATUALIZAÇÃO: Nova lógica de velocidade baseada no tamanho
-        // Velocidade mínima: equivalente a uma célula com 1000 pontos
-        // Velocidade máxima: equivalente a uma célula com 200 pontos
-        const cellMass = cell.mass;
-        
-        // Calcular multiplicador de velocidade baseado na massa
-        // Quanto menor a massa, maior a velocidade (até o limite de 200)
-        // Quanto maior a massa, menor a velocidade (até o limite de 1000)
-        let sizeMultiplier;
-        
-        if (cellMass <= 200) {
-          // Massa menor ou igual a 200: velocidade máxima
-          sizeMultiplier = 2.0;
-        } else if (cellMass >= 1000) {
-          // Massa maior ou igual a 1000: velocidade mínima
-          sizeMultiplier = 0.8;
-        } else {
-          // Entre 200 e 1000: interpolação linear
-          // Mapear de [200, 1000] para [2.0, 0.8]
-          sizeMultiplier = 2.0 - (cellMass - 200) * (1.2 / 800);
-        }
-        
-        // ATUALIZAÇÃO: Aumentar a força base para movimento mais rápido
-        const forceMagnitude = 800000 * deltaTime * speedMultiplier * sizeMultiplier;
-        
-        const force = {
-          x: direction.x * forceMagnitude,
-          y: direction.y * forceMagnitude
-        };
-        
-        cell.applyForce(force);
-        
-        // ATUALIZAÇÃO: Ajustar o impulso extra para células distantes
-        // Diminuir a margem de distância para aplicar o impulso
-        const distanceToTarget = distance(cell.position, targetPos);
-        if (distanceToTarget > 150) { // Reduzido de 200 para 150
-          // Aumentar o multiplicador de impulso para distâncias maiores
-          const boostMultiplier = Math.min(4.0, distanceToTarget / 75); // Ajustado para resposta mais rápida
-          const boostForce = {
-            x: direction.x * forceMagnitude * boostMultiplier * 0.6, // Aumentado de 0.5 para 0.6
-            y: direction.y * forceMagnitude * boostMultiplier * 0.6
-          };
-          cell.applyForce(boostForce);
-        }
-      } else {
-        // CORREÇÃO: Garantir que os bots também se movam
-        if (this.targetDirection.x !== 0 || this.targetDirection.y !== 0) {
-          // Aplicar impulso de velocidade se ativo
-          let speedMultiplier = 1;
-          if (this.hasEffect(PowerUpType.SPEED)) {
-            speedMultiplier = 1.5;
-          }
-          
-          // ATUALIZAÇÃO: Nova lógica de velocidade para IA também
-          const cellMass = cell.mass;
-          
-          let sizeMultiplier;
-          if (cellMass <= 200) {
-            sizeMultiplier = 2.0;
-          } else if (cellMass >= 1000) {
-            sizeMultiplier = 0.8;
-          } else {
-            sizeMultiplier = 2.0 - (cellMass - 200) * (1.2 / 800);
-          }
-          
-          // ATUALIZAÇÃO: Aumentar a força para IA também
-          const forceMagnitude = 500000 * deltaTime * speedMultiplier * sizeMultiplier;
-          
-          const force = {
-            x: this.targetDirection.x * forceMagnitude,
-            y: this.targetDirection.y * forceMagnitude
-          };
-          
-          cell.applyForce(force);
-        }
-      }
-    } catch (error) {
-      console.error("Erro ao atualizar célula:", error);
-      // Remover célula problemática
-      this.cells.splice(i, 1);
+    // Verificação de segurança para deltaTime
+    if (typeof deltaTime !== 'number' || deltaTime <= 0 || deltaTime > 1) {
+        deltaTime = 0.016; // Padrão para 60fps
     }
-  }
-    
-    // Verificar fusão de células
+
+    // Verificar se o mouse está no centro para fusão automática
+    if (this.isMouseInCenter && this.cells.length > 1) {
+        this.shouldMoveToCenter = true;
+    } else {
+        this.shouldMoveToCenter = false;
+    }
+
+    // Atualizar todas as células
+    for (let i = this.cells.length - 1; i >= 0; i--) {
+        const cell = this.cells[i];
+
+        try {
+            cell.update(deltaTime);
+
+            if (!this.isAI) {
+                let targetPos: Vector2D;
+                let direction: Vector2D;
+
+                if (this.shouldMoveToCenter) {
+                    const avgPos = this.getAveragePosition();
+                    targetPos = avgPos;
+                    direction = subtract(targetPos, cell.position);
+                } else {
+                    targetPos = this.mousePosition;
+                    direction = subtract(targetPos, cell.position);
+                }
+
+                // Normalizar direção
+                const dirMag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+                if (dirMag > 0) {
+                    direction.x /= dirMag;
+                    direction.y /= dirMag;
+                } else {
+                    continue;
+                }
+
+                let speedMultiplier = 1;
+                if (this.hasEffect(PowerUpType.SPEED)) {
+                    speedMultiplier = 2.0;
+                }
+
+                // 1. Fator de Massa (variação MUITO suave)
+                const cellMass = cell.mass;
+                // Interpolação linear MUITO suave entre 0.9 e 1.1
+                const minMass = 100;  // Abaixo disso, velocidade máxima (1.1)
+                const maxMass = 2000; // Acima disso, velocidade mínima (0.9)
+                const massFactor = Math.max(0.9, Math.min(1.1, 1.1 - (cellMass - minMass) * (0.2 / (maxMass - minMass))));
+
+
+                // 2. Fator de Distância do Alvo (ajustado - menor efeito)
+                const distanceToTarget = distance(cell.position, targetPos);
+                const distanceFactor = 1 + Math.min(0.3, distanceToTarget / 750); // Aumenta a velocidade em até 30%
+
+                // Combinar os fatores
+                const combinedMultiplier = speedMultiplier * massFactor * distanceFactor;
+
+                // Força base (mantida alta)
+                const forceMagnitude = 8000000 * deltaTime * combinedMultiplier;
+
+                const force = {
+                    x: direction.x * forceMagnitude,
+                    y: direction.y * forceMagnitude
+                };
+
+                cell.applyForce(force);
+
+            } else {
+                // Lógica da IA (mantida, mas com ajustes se necessário)
+                if (this.targetDirection.x !== 0 || this.targetDirection.y !== 0) {
+                    let speedMultiplier = 1;
+                    if (this.hasEffect(PowerUpType.SPEED)) {
+                        speedMultiplier = 1.5;
+                    }
+                    const cellMass = cell.mass;
+                    //aplica o mass factor na AI
+                    const massFactor = 100 / cellMass;
+
+                    const forceMagnitude = 500000 * deltaTime * speedMultiplier * massFactor;
+                    const force = {
+                        x: this.targetDirection.x * forceMagnitude,
+                        y: this.targetDirection.y * forceMagnitude
+                    };
+                    cell.applyForce(force);
+                }
+            }
+        } catch (error) {
+            console.error("Erro ao atualizar célula:", error);
+            this.cells.splice(i, 1);
+        }
+    }
+     // Verificar fusão de células
     this.handleCellMerging();
-    
+
     // Atualizar efeitos de power-up
     this.updatePowerUps(deltaTime);
-    
+
     // Atualizar pontuação com base na massa total
     const newScore = Math.floor(this.getTotalMass());
     if (newScore > this.score) {
       this.score = newScore;
-      
+
       // Atualizar pontuação mais alta
       if (this.score > this.highestScore) {
         this.highestScore = this.score;
       }
     }
-    
+
     // Atualizar UI se este for o jogador humano
     if (!this.isAI) {
       this.updateUI();
     }
-  }
+}
+
+
   
   updateUI(): void {
     const scoreElement = document.getElementById('score');
@@ -721,43 +686,43 @@ update(deltaTime: number): void {
     });
   }
   
-  setTargetDirection(target: Vector2D): void {
+setTargetDirection(target: Vector2D): void {
     // Verificação de segurança para o alvo
     if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
       return;
     }
-    
+
     // MELHORIA: Armazenar a posição real do mouse para movimento direto da célula
     this.mousePosition = { ...target };
-    
+
     // Calcular direção da posição média para o alvo
     const avgPos = this.getAveragePosition();
-    
-    // Verificação de segurança para avgPos
+
+    // Verificação de segurança para avgPos (CORRIGIDA)
     if (!avgPos || typeof avgPos.x !== 'number' || typeof avgPos.y !== 'number') {
-      return;
+        return;
     }
-    
+
     // Calcular vetor de direção
     const dir = {
       x: target.x - avgPos.x,
       y: target.y - avgPos.y
     };
-    
+
     // Normalizar direção
     const mag = Math.sqrt(dir.x * dir.x + dir.y * dir.y);
     if (mag > 0) {
       dir.x /= mag;
       dir.y /= mag;
     }
-    
+
     this.targetDirection = dir;
-    
+
     // NOVO: Verificar se o mouse está no centro da tela
     // Isso é usado para determinar se devemos mover as células para o centro para fusão
     const centerPos = avgPos;
     const distToCenter = distance(target, centerPos);
-    
+
     // Considerar "no centro" se estiver dentro de um raio pequeno
     this.isMouseInCenter = distToCenter < 50;
   }
@@ -1006,58 +971,62 @@ update(deltaTime: number): void {
     }
   }
   
-  getAveragePosition(): Vector2D {
-    if (this.cells.length === 0) return { x: 0, y: 0 };
-    
-    try {
-      let totalX = 0;
-      let totalY = 0;
-      let totalMass = 0;
-      
-      // Calcular média ponderada com base na massa da célula
-      for (const cell of this.cells) {
-        if (!cell.position || typeof cell.position.x !== 'number' || 
-            typeof cell.position.y !== 'number' || typeof cell.mass !== 'number') {
-          continue;
-        }
-        
-        totalX += cell.position.x * cell.mass;
-        totalY += cell.position.y * cell.mass;
-        totalMass += cell.mass;
+getAveragePosition(): Vector2D {
+  if (this.cells.length === 0) return { x: 0, y: 0 };
+
+  try {
+    let totalX = 0;
+    let totalY = 0;
+    let totalMass = 0;
+
+    // Calcular média ponderada com base na massa da célula
+    for (const cell of this.cells) {
+      if (!cell.position || typeof cell.position.x !== 'number' ||
+          typeof cell.position.y !== 'number' || typeof cell.mass !== 'number') {
+        continue;
       }
-      
-      if (totalMass === 0) return { x: 0, y: 0 };
-      
-      return {
-        x: totalX / totalMass,
-        y: totalY / totalMass
-      };
-    } catch (error) {
-      console.error("Erro ao calcular posição média:", error);
-      // Fallback: média simples
-      if (this.cells.length === 0) return { x: 0, y: 0 };
-      
-      let totalX = 0;
-      let totalY = 0;
-      let validCells = 0;
-      
-      for (const cell of this.cells) {
-        if (cell && cell.position && typeof cell.position.x === 'number' && 
-            typeof cell.position.y === 'number') {
-          totalX += cell.position.x;
-          totalY += cell.position.y;
-          validCells++;
-        }
-      }
-      
-      if (validCells === 0) return { x: 0, y: 0 };
-      
-      return {
-        x: totalX / validCells,
-        y: totalY / validCells
-      };
+
+      totalX += cell.position.x * cell.mass;
+      totalY += cell.position.y * cell.mass;
+      totalMass += cell.mass;
     }
+
+    // AQUI: Correção da verificação de segurança
+    if (totalMass === 0) {  // Verifica se totalMass é zero, não se avgPos é falsy.
+        return { x: 0, y: 0 };
+    }
+
+    return {
+      x: totalX / totalMass,
+      y: totalY / totalMass
+    };
+  } catch (error) {
+    console.error("Erro ao calcular posição média:", error);
+    // Fallback: média simples
+    if (this.cells.length === 0) return { x: 0, y: 0 };
+
+    let totalX = 0;
+    let totalY = 0;
+    let validCells = 0;
+
+    for (const cell of this.cells) {
+      if (cell && cell.position && typeof cell.position.x === 'number' &&
+          typeof cell.position.y === 'number') {
+        totalX += cell.position.x;
+        totalY += cell.position.y;
+        validCells++;
+      }
+    }
+
+    if (validCells === 0) return { x: 0, y: 0 };
+
+    return {
+      x: totalX / validCells,
+      y: totalY / validCells
+    };
   }
+}
+
   
   getMaxRadius(): number {
     if (this.cells.length === 0) return 0;

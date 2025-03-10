@@ -220,7 +220,8 @@ export class GamePlayer implements Player {
     
     // MELHORIA: Inicializar aceleração e velocidade máxima
     this.acceleration = { x: 0, y: 0 };
-    this.maxSpeed = 800;
+    // ATUALIZAÇÃO: Aumentar velocidade máxima base
+    this.maxSpeed = 1500; // Aumentado de 800 para 1500
     
     // NOVO: Inicializar variáveis para movimento contínuo e fusão automática
     this.isMouseInCenter = false;
@@ -328,11 +329,30 @@ update(deltaTime: number): void {
           speedMultiplier = 2.0;
         }
         
-        // Células menores se movem mais rápido
-        const sizeMultiplier = Math.max(0.7, 1.5 - (cell.radius / 100));
+        // ATUALIZAÇÃO: Nova lógica de velocidade baseada no tamanho
+        // Velocidade mínima: equivalente a uma célula com 1000 pontos
+        // Velocidade máxima: equivalente a uma célula com 200 pontos
+        const cellMass = cell.mass;
         
-        // CORREÇÃO: Força para movimento contínuo - garantir que seja sempre aplicada
-        const forceMagnitude = 500000 * deltaTime * speedMultiplier * sizeMultiplier;
+        // Calcular multiplicador de velocidade baseado na massa
+        // Quanto menor a massa, maior a velocidade (até o limite de 200)
+        // Quanto maior a massa, menor a velocidade (até o limite de 1000)
+        let sizeMultiplier;
+        
+        if (cellMass <= 200) {
+          // Massa menor ou igual a 200: velocidade máxima
+          sizeMultiplier = 2.0;
+        } else if (cellMass >= 1000) {
+          // Massa maior ou igual a 1000: velocidade mínima
+          sizeMultiplier = 0.8;
+        } else {
+          // Entre 200 e 1000: interpolação linear
+          // Mapear de [200, 1000] para [2.0, 0.8]
+          sizeMultiplier = 2.0 - (cellMass - 200) * (1.2 / 800);
+        }
+        
+        // ATUALIZAÇÃO: Aumentar a força base para movimento mais rápido
+        const forceMagnitude = 800000 * deltaTime * speedMultiplier * sizeMultiplier;
         
         const force = {
           x: direction.x * forceMagnitude,
@@ -341,13 +361,15 @@ update(deltaTime: number): void {
         
         cell.applyForce(force);
         
-        // Adicionar um pequeno impulso extra para células que estão muito longe
+        // ATUALIZAÇÃO: Ajustar o impulso extra para células distantes
+        // Diminuir a margem de distância para aplicar o impulso
         const distanceToTarget = distance(cell.position, targetPos);
-        if (distanceToTarget > 200) {
-          const boostMultiplier = Math.min(3.0, distanceToTarget / 100);
+        if (distanceToTarget > 150) { // Reduzido de 200 para 150
+          // Aumentar o multiplicador de impulso para distâncias maiores
+          const boostMultiplier = Math.min(4.0, distanceToTarget / 75); // Ajustado para resposta mais rápida
           const boostForce = {
-            x: direction.x * forceMagnitude * boostMultiplier * 0.5,
-            y: direction.y * forceMagnitude * boostMultiplier * 0.5
+            x: direction.x * forceMagnitude * boostMultiplier * 0.6, // Aumentado de 0.5 para 0.6
+            y: direction.y * forceMagnitude * boostMultiplier * 0.6
           };
           cell.applyForce(boostForce);
         }
@@ -360,11 +382,20 @@ update(deltaTime: number): void {
             speedMultiplier = 1.5;
           }
           
-          // Células menores se movem mais rápido
-          const sizeMultiplier = Math.max(0.5, 1 - (cell.radius / 200));
+          // ATUALIZAÇÃO: Nova lógica de velocidade para IA também
+          const cellMass = cell.mass;
           
-          // CORREÇÃO: Aumentar a força para garantir movimento
-          const forceMagnitude = 300000 * deltaTime * speedMultiplier * sizeMultiplier;
+          let sizeMultiplier;
+          if (cellMass <= 200) {
+            sizeMultiplier = 2.0;
+          } else if (cellMass >= 1000) {
+            sizeMultiplier = 0.8;
+          } else {
+            sizeMultiplier = 2.0 - (cellMass - 200) * (1.2 / 800);
+          }
+          
+          // ATUALIZAÇÃO: Aumentar a força para IA também
+          const forceMagnitude = 500000 * deltaTime * speedMultiplier * sizeMultiplier;
           
           const force = {
             x: this.targetDirection.x * forceMagnitude,
@@ -599,7 +630,6 @@ update(deltaTime: number): void {
       }
     }
   }
-
   private handleCellMerging(): void {
     // Verificar células que podem se fundir
     for (let i = 0; i < this.cells.length; i++) {
@@ -797,9 +827,8 @@ update(deltaTime: number): void {
             this.name // Passar o nome do jogador
           );
           
-          // MELHORIA: Aplicar velocidade na direção da divisão com um impulso
-          // Velocidade de divisão aumentada para melhor controle
-          const splitSpeed = 3000 + newRadius * 10; // Velocidade alta mas duração mais curta
+          // ATUALIZAÇÃO: Aumentar velocidade de divisão para melhor controle
+          const splitSpeed = 4000 + newRadius * 15; // Aumentado de 3000 para 4000
           newCell.velocity = {
             x: dir.x * splitSpeed,
             y: dir.y * splitSpeed
@@ -877,8 +906,8 @@ update(deltaTime: number): void {
           const ejectEvent = new CustomEvent('player-ejected-mass', {
             detail: {
               position: ejectPos,
-              // MELHORIA: Ejeção mais rápida para melhor jogabilidade
-              velocity: { x: dir.x * 3000, y: dir.y * 3000 }, // Aumentado de 2000 para 3000
+              // ATUALIZAÇÃO: Ejeção ainda mais rápida para melhor jogabilidade
+              velocity: { x: dir.x * 4000, y: dir.y * 4000 }, // Aumentado de 3000 para 4000
               radius: ejectRadius,
               color: this.color
             }
@@ -1004,7 +1033,7 @@ update(deltaTime: number): void {
         y: totalY / totalMass
       };
     } catch (error) {
-            console.error("Erro ao calcular posição média:", error);
+      console.error("Erro ao calcular posição média:", error);
       // Fallback: média simples
       if (this.cells.length === 0) return { x: 0, y: 0 };
       
@@ -1087,8 +1116,8 @@ update(deltaTime: number): void {
       const direction = subtract(centerPos, cell.position);
       const normalizedDir = normalize(direction);
       
-      // Aplicar força extra para mover rapidamente para o centro
-      const forceMagnitude = 300000; // Força alta para movimento rápido
+      // ATUALIZAÇÃO: Aplicar força extra para mover rapidamente para o centro
+      const forceMagnitude = 500000; // Aumentado de 300000 para 500000
       const force = {
         x: normalizedDir.x * forceMagnitude,
         y: normalizedDir.y * forceMagnitude

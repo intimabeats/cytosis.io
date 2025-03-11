@@ -62,7 +62,6 @@ function setupBackgroundAnimation() {
   
   animate();
 }
-
 // Initialize the game when the window loads
 window.addEventListener('load', () => {
   // Set debug mode to false by default
@@ -149,23 +148,23 @@ window.addEventListener('load', () => {
   });
   
   // Add touch controls for mobile
-  setupTouchControls(game);
+  setupTouchControls(); // Remove the 'game' parameter
 });
 
 // Setup touch controls for mobile devices
-function setupTouchControls(game: Game): void {
+function setupTouchControls(): void { // Remove the 'game: Game' parameter
   const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
   
   // Double tap for split
   let lastTapTime = 0;
-  canvas.addEventListener('touchend', (e) => {
+  canvas.addEventListener('touchend', (_) => { // Use '_' for unused parameter
     const currentTime = new Date().getTime();
     const tapLength = currentTime - lastTapTime;
     
     if (tapLength < 300 && tapLength > 0) {
       // Double tap detected
       window.dispatchEvent(new CustomEvent('player-split'));
-      e.preventDefault();
+      _.preventDefault();
     }
     
     lastTapTime = currentTime;
@@ -174,7 +173,7 @@ function setupTouchControls(game: Game): void {
   // Long press for eject
   let touchTimeout: number | null = null;
   
-  canvas.addEventListener('touchstart', (e) => {
+  canvas.addEventListener('touchstart', (_) => { // Use '_' for unused parameter
     if (touchTimeout === null) {
       touchTimeout = window.setTimeout(() => {
         // Long press detected

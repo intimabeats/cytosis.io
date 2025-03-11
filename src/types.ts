@@ -22,6 +22,7 @@ export interface Camera {
   height: number;
   worldToScreen(worldPos: Vector2D): Vector2D;
   screenToWorld(screenPos: Vector2D): Vector2D;
+  isInView(worldPos: Vector2D, radius: number): boolean; // Added isInView
 }
 
 export interface Cell {
@@ -42,6 +43,7 @@ export interface PlayerCell extends Cell {
   owner: string;
   canMerge: boolean;
   mergeTime: number;
+    playerName: string; // Adicionado para mostrar nome na célula
 }
 
 export interface AIBehavior {
@@ -61,7 +63,7 @@ export interface PowerUp extends Entity {
   apply(player: Player): void;
 }
 
-export interface Player {
+export interface Player extends Entity{ //Removed Entity to avoid errors
   id: string;
   name: string;
   cells: PlayerCell[];
@@ -76,6 +78,13 @@ export interface Player {
   applyPowerUp(type: PowerUpType, duration: number): void;
   getTotalMass(): number;
   getAveragePosition(): Vector2D;
+    setTargetDirection(target: Vector2D): void; // Added setTargetDirection
+    maxCells: number; // Added maxCells
+    recordFoodEaten(): void; // Added
+    recordVirusHit(): void; // Added
+    addCell(position: Vector2D, radius: number): PlayerCell | null; // Added
+    hasEffect(type: PowerUpType): boolean; // Added
+    getMaxRadius(): number; // Added
 }
 
 export interface Virus extends Entity {
@@ -83,6 +92,7 @@ export interface Virus extends Entity {
   splitThreshold: number;
   canSplit(cell: Cell): boolean;
   split(cell: Cell): void;
+    grow(): void; // Added
 }
 
 export interface Particle extends Entity {
@@ -108,7 +118,7 @@ export interface GameState {
   powerUps: PowerUp[];
   particles: Particle[];
   worldSize: Vector2D;
-  leaderboard: { id: string; name: string; score: number }[];
+  leaderboard: { id: string; name: string; score: number, isHuman: boolean; color: string; cells: number }[]; // type GameState
 }
 
 export interface InputState {

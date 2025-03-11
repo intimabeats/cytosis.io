@@ -1,15 +1,12 @@
 // src/cell.ts - Versão melhorada para física mais responsiva
 import { Cell, Vector2D, Camera } from './types';
-import { 
-  generateId, 
-  generateMembranePoints, 
-  lerpVector, 
-  validatePosition, 
-  limit,
-  add,
+import {
+  generateId,
+  generateMembranePoints,
+  lerpVector,
+  validatePosition,
   distance,
   normalize,
-  multiply,
   subtract,
   magnitude
 } from './utils';
@@ -31,12 +28,12 @@ export class BaseCell implements Cell {
   pulseEffect: number;
   pulseDirection: number;
   pulseSpeed: number;
-  
+
   // MELHORIA: Adicionar variáveis para física melhorada
   maxSpeed: number;
   acceleration: Vector2D;
   damping: number;
-  
+
   constructor(position: Vector2D, radius: number, color: string) {
     this.id = generateId();
     this.position = { ...position };
@@ -84,7 +81,7 @@ export class BaseCell implements Cell {
     this.pulseDirection = 1;
     this.pulseSpeed = 0.5 + Math.random() * 0.5;
   }
-  
+
 
 update(deltaTime: number): void {
     // Verificação de segurança para deltaTime
@@ -138,7 +135,7 @@ update(deltaTime: number): void {
 
     // Validar posição (mantido)
     const defaultPos = { x: 0, y: 0 };
-    this.position = validatePosition(this.position, defaultPos);   
+    this.position = validatePosition(this.position, defaultPos);
 
     // Atualizar membrana - garantir que membranePoints e membraneTargetPoints estejam inicializados
     if (!this.membranePoints || !this.membraneTargetPoints ||
@@ -156,29 +153,10 @@ update(deltaTime: number): void {
 }
 
 
-applyForce(force: Vector2D): void {
-    // Verificação de segurança para força
-    if (!force || typeof force.x !== 'number' || typeof force.y !== 'number') {
-      return;
-    }
-
-    // CORREÇÃO: Garantir que a aceleração seja inicializada
-    if (!this.acceleration) {
-      this.acceleration = { x: 0, y: 0 };
-    }
-
-    // F = ma, mas simplificaremos dividindo pela massa
-    // CORREÇÃO: Aumentar o efeito da força para garantir movimento
-    const massEffect = Math.min(1, 100 / this.mass); // Reduzir o efeito da massa para células grandes
-    this.acceleration.x += force.x * massEffect;
-    this.acceleration.y += force.y * massEffect;
-  }
-   
-	
   updatePulseEffect(deltaTime: number): void {
     // Atualizar animação de pulso
     this.pulseEffect += this.pulseDirection * this.pulseSpeed * deltaTime;
-    
+
     if (this.pulseEffect > 1) {
       this.pulseEffect = 1;
       this.pulseDirection = -1;
@@ -187,7 +165,7 @@ applyForce(force: Vector2D): void {
       this.pulseDirection = 1;
     }
   }
-  
+
   updateMembranePoints(): void {
     // Verificação de segurança para pontos da membrana
     if (!this.membranePoints || !this.membraneTargetPoints ||
@@ -254,35 +232,35 @@ applyForce(force: Vector2D): void {
     console.log("updateMembranePoints - membranePoints (após interpolação):", this.membranePoints); // LOG
 }
 
-  
+
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
     // Verificação de segurança para câmera
-    if (!camera || !camera.isInView) {
+    if (!camera) {
       return;
     }
-    
+
     if (!camera.isInView(this.position, this.radius * 1.2)) return;
-    
+
     const screenPos = camera.worldToScreen(this.position);
     const screenRadius = this.radius * camera.scale;
-    
+
     // Desenhar membrana da célula (borda externa)
     ctx.beginPath();
-    
+
     // Verificação de segurança para pontos da membrana
     if (!this.membranePoints || this.membranePoints.length === 0) {
       // Fallback para círculo simples se os pontos da membrana estiverem faltando
       ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
     } else {
       const screenMembranePoints = this.membranePoints.map(p => camera.worldToScreen(p));
-      
+
       ctx.moveTo(screenMembranePoints[0].x, screenMembranePoints[0].y);
       for (let i = 1; i < screenMembranePoints.length; i++) {
         ctx.lineTo(screenMembranePoints[i].x, screenMembranePoints[i].y);
       }
       ctx.closePath();
     }
-    
+
     // Preencher com gradiente
     try {
       const gradient = ctx.createRadialGradient(
@@ -291,22 +269,22 @@ applyForce(force: Vector2D): void {
       );
       gradient.addColorStop(0, this.color);
       gradient.addColorStop(1, this.adjustColor(this.color, -30));
-      
+
       ctx.fillStyle = gradient;
     } catch (error) {
       // Fallback para cor sólida se o gradiente falhar
       ctx.fillStyle = this.color;
     }
-    
+
     ctx.fill();
-    
+
     // Desenhar núcleo da célula
     const nucleusRadius = screenRadius * 0.4;
     ctx.beginPath();
     ctx.arc(screenPos.x, screenPos.y, nucleusRadius, 0, Math.PI * 2);
     ctx.fillStyle = this.adjustColor(this.color, -50);
     ctx.fill();
-    
+
     // Desenhar destaque do núcleo
     ctx.beginPath();
     ctx.arc(
@@ -317,29 +295,29 @@ applyForce(force: Vector2D): void {
     );
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.fill();
-    
+
     // Desenhar detalhes internos (organelas)
     this.drawCellDetails(ctx, screenPos, screenRadius);
-    
+
     // MELHORIA: Adicionar efeito de rastro para células em movimento rápido
     // Aumentar o limite de velocidade para mostrar o rastro
     if (Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y) > 80) {
       this.addTrailEffect(ctx, camera);
     }
   }
-  
+
   drawCellDetails(ctx: CanvasRenderingContext2D, screenPos: Vector2D, screenRadius: number): void {
     // Desenhar pequenas organelas dentro da célula
     const organelleCount = Math.floor(this.radius / 10);
-    
+
     for (let i = 0; i < organelleCount; i++) {
       // Posição aleatória dentro da célula
       const angle = Math.random() * Math.PI * 2;
       const distance = Math.random() * screenRadius * 0.6;
-      
+
       const x = screenPos.x + Math.cos(angle) * distance;
       const y = screenPos.y + Math.sin(angle) * distance;
-      
+
       // Desenhar organela
       ctx.beginPath();
       ctx.arc(x, y, screenRadius * 0.05, 0, Math.PI * 2);
@@ -347,43 +325,44 @@ applyForce(force: Vector2D): void {
       ctx.fill();
     }
   }
-  
-applyForce(force: Vector2D): void {
-  // Verificação de segurança para força
-  if (!force || typeof force.x !== 'number' || typeof force.y !== 'number') {
-    return;
-  }
-  
-  // CORREÇÃO: Garantir que a aceleração seja inicializada
-  if (!this.acceleration) {
-    this.acceleration = { x: 0, y: 0 };
-  }
-  
-  // F = ma, mas simplificaremos dividindo pela massa
-  // CORREÇÃO: Aumentar o efeito da força para garantir movimento
-  const massEffect = Math.min(1, 100 / this.mass); // Reduzir o efeito da massa para células grandes
-  this.acceleration.x += force.x * massEffect;
-  this.acceleration.y += force.y * massEffect;
+
+  applyForce(force: Vector2D): void {
+    // Verificação de segurança para força
+    if (!force || typeof force.x !== 'number' || typeof force.y !== 'number') {
+      return;
+    }
+
+    // CORREÇÃO: Garantir que a aceleração seja inicializada
+    if (!this.acceleration) {
+      this.acceleration = { x: 0, y: 0 };
+    }
+
+    // F = ma, mas simplificaremos dividindo pela massa
+    // CORREÇÃO: Aumentar o efeito da força para garantir movimento
+    const massEffect = Math.min(1, 100 / this.mass); // Reduzir o efeito da massa para células grandes
+    this.acceleration.x += force.x * massEffect;
+    this.acceleration.y += force.y * massEffect;
 }
-  
+
   // Aplicar uma força de repulsão de outra célula ou objeto
   applyRepulsion(otherPos: Vector2D, strength: number = 1): void {
     const direction = subtract(this.position, otherPos);
     const dist = distance(this.position, otherPos);
-    
+
     // Evitar divisão por zero
     if (dist < 0.1) return;
-    
+
     // MELHORIA: Aumentar força de repulsão para evitar sobreposição
     // Calcular força de repulsão (mais forte quando mais próximo)
     const forceMagnitude = strength * (1 / dist) * 2; // Multiplicado por 2 para repulsão mais forte
-    const force = multiply(normalize(direction), forceMagnitude);
-    
+    const force = normalize(direction);
+    force.x *= forceMagnitude;
+    force.y *= forceMagnitude;
     this.applyForce(force);
   }
-  
+
   // Auxiliar para escurecer/clarear uma cor
-  adjustColor(color: string, amount: number): string {
+  private adjustColor(color: string, amount: number): string {
     try {
       // Para cores HSL
       if (color.startsWith('hsl')) {
@@ -395,23 +374,23 @@ applyForce(force: Vector2D): void {
           return `hsl(${h}, ${s}%, ${l}%)`;
         }
       }
-      
+
       // Para cores hex
       if (color.startsWith('#')) {
         // Converter hex para rgb
         const r = parseInt(color.slice(1, 3), 16);
         const g = parseInt(color.slice(3, 5), 16);
         const b = parseInt(color.slice(5, 7), 16);
-        
+
         // Ajustar valores rgb
         const newR = Math.max(0, Math.min(255, r + amount));
         const newG = Math.max(0, Math.min(255, g + amount));
         const newB = Math.max(0, Math.min(255, b + amount));
-        
+
         // Converter de volta para hex
         return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
       }
-      
+
       // Fallback para outros formatos de cor
       return color;
     } catch (error) {
@@ -419,7 +398,7 @@ applyForce(force: Vector2D): void {
       return color;
     }
   }
-  
+
   // MELHORIA: Efeito de rastro melhorado para células em movimento rápido
    addTrailEffect(ctx: CanvasRenderingContext2D, camera: Camera): void {
     // Só adicionar rastro se estiver se movendo rápido o suficiente
@@ -480,7 +459,7 @@ applyForce(force: Vector2D): void {
       }
     }
   }
-  
+
   // Adicionar um efeito de brilho à célula (para power-ups ou estados especiais)
   addGlowEffect(ctx: CanvasRenderingContext2D, screenPos: Vector2D, screenRadius: number, color: string, intensity: number = 0.5): void {
     // Criar um efeito de brilho ao redor da célula
@@ -489,28 +468,28 @@ applyForce(force: Vector2D): void {
       screenPos.x, screenPos.y, screenRadius * 0.8,
       screenPos.x, screenPos.y, glowSize
     );
-    
+
     // Fazer o brilho desaparecer a partir da borda da célula
     gradient.addColorStop(0, `${color}${Math.floor(intensity * 99).toString(16)}`);
     gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    
+
     ctx.beginPath();
     ctx.arc(screenPos.x, screenPos.y, glowSize, 0, Math.PI * 2);
     ctx.fillStyle = gradient;
     ctx.fill();
   }
-  
+
   // Adicionar um efeito de ondulação quando a célula muda de tamanho drasticamente
   addRippleEffect(ctx: CanvasRenderingContext2D, camera: Camera): void {
     // Isso seria chamado quando a célula cresce ou encolhe significativamente
     const screenPos = camera.worldToScreen(this.position);
     const screenRadius = this.radius * camera.scale;
-    
+
     // Desenhar círculos de ondulação
     for (let i = 1; i <= 3; i++) {
       const rippleRadius = screenRadius * (1 + i * 0.2);
       const opacity = 0.5 - i * 0.15; // Desaparecer à medida que as ondulações se expandem
-      
+
       ctx.beginPath();
       ctx.arc(screenPos.x, screenPos.y, rippleRadius, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(255, 255, 255, ${opacity})`;
@@ -518,15 +497,15 @@ applyForce(force: Vector2D): void {
       ctx.stroke();
     }
   }
-  
+
   // Adicionar um efeito pulsante para destacar a célula
   addPulseHighlight(ctx: CanvasRenderingContext2D, camera: Camera, color: string = '#ffffff'): void {
     const screenPos = camera.worldToScreen(this.position);
     const baseRadius = this.radius * camera.scale;
-    
+
     // Calcular tamanho do pulso com base no efeito de pulso
     const pulseRadius = baseRadius * (1 + this.pulseEffect * 0.2);
-    
+
     // Desenhar anel pulsante
     ctx.beginPath();
     ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
@@ -534,13 +513,13 @@ applyForce(force: Vector2D): void {
     ctx.lineWidth = 3;
     ctx.stroke();
   }
-  
+
   // MELHORIA: Adicionar método para aplicar impulso instantâneo
   applyImpulse(direction: Vector2D, strength: number): void {
     if (!direction || typeof direction.x !== 'number' || typeof direction.y !== 'number') {
       return;
     }
-    
+
     // Normalizar direção
     const mag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
     if (mag > 0) {
@@ -551,34 +530,34 @@ applyForce(force: Vector2D): void {
     } else {
       return;
     }
-    
+
     // Aplicar impulso diretamente à velocidade
     this.velocity.x += direction.x * strength;
     this.velocity.y += direction.y * strength;
   }
-  
+
   // MELHORIA: Adicionar método para movimento mais suave
-  moveToward(target: Vector2D, speed: number, deltaTime: number): void {
+  moveToward(target: Vector2D, speed: number): void {
     if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
       return;
     }
-    
+
     // Calcular direção para o alvo
     const direction = subtract(target, this.position);
     const dist = magnitude(direction);
-    
+
     // Se já estiver no alvo, não fazer nada
     if (dist < 1) return;
-    
+
     // Normalizar direção
     const normalizedDir = {
       x: direction.x / dist,
       y: direction.y / dist
     };
-    
+
     // Calcular força com base na distância (mais forte quando mais longe)
     const forceMagnitude = Math.min(speed * 10, speed * (dist / 10));
-    
+
     // Aplicar força
     this.applyForce({
       x: normalizedDir.x * forceMagnitude,
